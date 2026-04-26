@@ -1,0 +1,47 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: auth-service
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/auth_and_user
+    username: root
+    password: root1234
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    database-platform: org.hibernate.dialect.MySQLDialect
+
+  # Configuración de correo (Gmail)
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: vanesamaingual2008@gmail.com
+    password: hdne nana cmeu yspm
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+jwt:
+  secret: dGVzdFNlY3JldEtleUZvckp3dEF1dGhTZXJ2aWNlMTIzNDU2Nzg5MA==
+  expiration: 86400000              # 1 día en ms
+  refresh-expiration: 604800000     # 7 días en ms
+
+app:
+  frontend-url: http://localhost:4200   # URL base para links del email
+  max-login-attempts: 5
+
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    com.auth: DEBUG
+    org.springframework.web: DEBUG
