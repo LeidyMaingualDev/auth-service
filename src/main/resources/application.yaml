@@ -30,10 +30,25 @@ spring:
           starttls:
             enable: true
 
+  cloud:
+    consul:
+      host: localhost
+      port: 8500
+      discovery:
+        service-name: auth-service
+        health-check-path: /actuator/health
+        health-check-interval: 10s
+
 jwt:
   secret: dGVzdFNlY3JldEtleUZvckp3dEF1dGhTZXJ2aWNlMTIzNDU2Nzg5MA==
   expiration: 86400000              # 1 día en ms
   refresh-expiration: 604800000     # 7 días en ms
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
 
 app:
   frontend-url: http://localhost:4200   # URL base para links del email

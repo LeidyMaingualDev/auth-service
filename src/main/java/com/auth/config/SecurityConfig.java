@@ -36,7 +36,9 @@ public class SecurityConfig {
                                 "/auth/login",
                                 "/auth/forgot-password",
                                 "/auth/reset-password",
-                                "/auth/refresh-token"
+                                "/auth/refresh-token",
+                                "/actuator/health",
+                                "/actuator/info"
                         ).permitAll()
                         // Rutas protegidas
                         .anyRequest().authenticated()
@@ -56,7 +58,8 @@ public class SecurityConfig {
     // Proveedor de autenticación
     @Bean
     public AuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+        provider.setUserDetailsService(userDetailsService);
         provider.setPasswordEncoder(passwordEncoder());
         return provider;
     }
