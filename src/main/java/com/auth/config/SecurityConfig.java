@@ -2,6 +2,7 @@ package com.auth.config;
 
 import com.auth.security.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.web.servlet.server.CookieSameSiteSupplier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -75,5 +76,10 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public CookieSameSiteSupplier cookieSameSiteSupplier() {
+        return CookieSameSiteSupplier.ofNone();
     }
 }
