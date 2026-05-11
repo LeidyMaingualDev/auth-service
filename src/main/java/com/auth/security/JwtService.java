@@ -23,9 +23,24 @@ public class JwtService {
     @Value("${jwt.refresh-expiration}")
     private long refreshExpirationTime;
 
-    // Token de acceso normal
+    // Token de acceso normal sin rol (mantener compatibilidad)
     public String generateToken(UserDetails userDetails) {
         return buildToken(new HashMap<>(), userDetails, expirationTime);
+    }
+
+    // Token con rol incluido
+    public String generateToken(UserDetails userDetails, String role) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("role", role);
+        return buildToken(claims, userDetails, expirationTime);
+    }
+
+    // Token con rol y rememberMe
+    public String generateToken(UserDetails userDetails, boolean rememberMe, String role) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("role", role);
+        long duration = rememberMe ? refreshExpirationTime : expirationTime;
+        return buildToken(claims, userDetails, duration);
     }
 
     // Refresh token de larga duración
@@ -33,12 +48,6 @@ public class JwtService {
         Map<String, Object> claims = new HashMap<>();
         claims.put("type", "refresh");
         return buildToken(claims, userDetails, refreshExpirationTime);
-    }
-
-    // Token con duración personalizada (para rememberMe)
-    public String generateToken(UserDetails userDetails, boolean rememberMe) {
-        long duration = rememberMe ? refreshExpirationTime : expirationTime;
-        return buildToken(new HashMap<>(), userDetails, duration);
     }
 
     private String buildToken(Map<String, Object> extraClaims,
@@ -74,7 +83,7 @@ public class JwtService {
         return claimsResolver.apply(claims);
     }
 
-    private Claims extractAllClaims(String token) {
+    public Claims extractAllClaims(String token) {
         return Jwts.parserBuilder()
                 .setSigningKey(getSigningKey())
                 .build()

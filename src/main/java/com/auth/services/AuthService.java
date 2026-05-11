@@ -37,8 +37,6 @@ public class AuthService {
     @Value("${app.max-login-attempts}")
     private int maxLoginAttempts;
 
-    // ─── RF01/RF02 - Registro ─────────────────────────────
-
     @Transactional
     public ApiResponseDTO<AuthResponseDTO> register(RegisterRequestDTO request) {
 
@@ -67,7 +65,8 @@ public class AuthService {
 
         userRepository.save(user);
 
-        String token = jwtService.generateToken(user);
+        // Incluir rol en el token
+        String token = jwtService.generateToken(user, "USER");
         String refreshToken = jwtService.generateRefreshToken(user);
 
         AuthResponseDTO authResponse = AuthResponseDTO.builder()
@@ -81,11 +80,9 @@ public class AuthService {
         return ApiResponseDTO.ok("Usuario registrado exitosamente", authResponse);
     }
 
-    // Login con control de intentos
     @Transactional
     public ApiResponseDTO<AuthResponseDTO> login(LoginRequestDTO request, String ipAddress) {
 
-        // Verificar si el usuario existe y está activo
         User user = userRepository.findByEmail(request.getEmail()).orElse(null);
 
         if (user == null) {
@@ -103,11 +100,7 @@ public class AuthService {
                     )
             );
 
-            // Intento exitoso → registrar
             registerLoginAttempt(request.getEmail(), ipAddress, true);
-
-            String token = jwtService.generateToken(user, Boolean.TRUE.equals(request.getRememberMe()));
-            String refreshToken = jwtService.generateRefreshToken(user);
 
             // Obtener rol principal
             String role = (user.getRoles() != null && !user.getRoles().isEmpty())
@@ -116,6 +109,10 @@ public class AuthService {
                     .findFirst()
                     .orElse("USER")
                     : "USER";
+
+            // Incluir rol en el token
+            String token = jwtService.generateToken(user, Boolean.TRUE.equals(request.getRememberMe()), role);
+            String refreshToken = jwtService.generateRefreshToken(user);
 
             AuthResponseDTO authResponse = AuthResponseDTO.builder()
                     .token(token)
@@ -129,10 +126,8 @@ public class AuthService {
 
         } catch (AuthenticationException e) {
 
-            // Intento fallido → registrar
             registerLoginAttempt(request.getEmail(), ipAddress, false);
 
-            // Contar intentos fallidos en los últimos 15 minutos
             long failedAttempts = loginAttemptRepository
                     .countByEmailAndSuccessAndAttemptedAtAfter(
                             request.getEmail(),
@@ -140,7 +135,6 @@ public class AuthService {
                             LocalDateTime.now().minusMinutes(15)
                     );
 
-            // Si supera el límite, enviar alerta por email
             if (failedAttempts >= maxLoginAttempts) {
                 emailService.sendLoginAlertEmail(user.getEmail(), user.getName(), ipAddress);
                 log.warn("Alerta enviada a {} por {} intentos fallidos desde IP: {}",
@@ -152,18 +146,14 @@ public class AuthService {
         }
     }
 
-    // Solicitud de recuperación de contraseña
     @Transactional
     public ApiResponseDTO<Void> forgotPassword(ForgotPasswordRequestDTO request) {
 
-        // Respuesta genérica por seguridad (no revelar si el email existe)
         User user = userRepository.findByEmail(request.getEmail()).orElse(null);
 
         if (user != null && user.isActive()) {
-            // Invalidar tokens anteriores
             passwordResetTokenRepository.invalidatePreviousTokens(user.getId());
 
-            // Crear nuevo token
             String token = UUID.randomUUID().toString();
             PasswordResetToken resetToken = PasswordResetToken.builder()
                     .token(token)
@@ -173,18 +163,13 @@ public class AuthService {
                     .build();
 
             passwordResetTokenRepository.save(resetToken);
-
-            // Enviar email
             emailService.sendPasswordResetEmail(user.getEmail(), user.getName(), token);
         }
 
-        // Siempre retorna éxito (seguridad: no revelar si email existe)
         return ApiResponseDTO.ok(
                 "Si el correo está registrado, recibirás un enlace en los próximos minutos"
         );
     }
-
-    // Resetear contraseña con token
 
     @Transactional
     public ApiResponseDTO<Void> resetPassword(ResetPasswordRequestDTO request) {
@@ -209,34 +194,27 @@ public class AuthService {
 
         User user = resetToken.getUser();
 
-        // Verificar que no sea la misma contraseña
         if (passwordEncoder.matches(request.getNewPassword(), user.getPassword())) {
             return ApiResponseDTO.error(
                     "La nueva contraseña no puede ser igual a la anterior"
             );
         }
 
-        // Actualizar contraseña
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
 
-        // Invalidar el token usado
         resetToken.setUsed(true);
         passwordResetTokenRepository.save(resetToken);
 
-        // Notificar cambio exitoso
         emailService.sendPasswordChangedEmail(user.getEmail(), user.getName());
 
         return ApiResponseDTO.ok("Contraseña restablecida exitosamente");
     }
 
-    // Refresh Token
-
     public ApiResponseDTO<AuthResponseDTO> refreshToken(RefreshTokenRequestDTO request) {
 
         String refreshToken = request.getRefreshToken();
 
-        // Verificar que no esté en blacklist
         if (tokenBlacklistRepository.existsByToken(refreshToken)) {
             return ApiResponseDTO.error("El token no es válido");
         }
@@ -249,13 +227,25 @@ public class AuthService {
                 return ApiResponseDTO.error("El token ha expirado o no es válido");
             }
 
-            String newToken = jwtService.generateToken(userDetails);
+            // Obtener rol del usuario para incluirlo en el nuevo token
+            User user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+            String role = (user.getRoles() != null && !user.getRoles().isEmpty())
+                    ? user.getRoles().stream()
+                    .map(Role::getName)
+                    .findFirst()
+                    .orElse("USER")
+                    : "USER";
+
+            String newToken = jwtService.generateToken(userDetails, role);
             String newRefreshToken = jwtService.generateRefreshToken(userDetails);
 
             AuthResponseDTO authResponse = AuthResponseDTO.builder()
                     .token(newToken)
                     .refreshToken(newRefreshToken)
                     .email(email)
+                    .role(role)
                     .build();
 
             return ApiResponseDTO.ok("Token renovado exitosamente", authResponse);
@@ -265,7 +255,6 @@ public class AuthService {
         }
     }
 
-    // Logout seguro
     @Transactional
     public ApiResponseDTO<Void> logout(String authHeader) {
 
@@ -275,7 +264,6 @@ public class AuthService {
 
         String token = authHeader.substring(7);
 
-        // Agregar a blacklist
         TokenBlacklist blacklistedToken = TokenBlacklist.builder()
                 .token(token)
                 .build();
@@ -284,8 +272,6 @@ public class AuthService {
 
         return ApiResponseDTO.ok("Sesión cerrada exitosamente");
     }
-
-    // Helper: registrar intento de login
 
     private void registerLoginAttempt(String email, String ipAddress, boolean success) {
         LoginAttempt attempt = LoginAttempt.builder()
