@@ -364,18 +364,19 @@ public class AuthService {
     }
 
     /**
-     * Cierra la sesión del usuario invalidando su token JWT activo.
+     * Cierra la sesión del usuario invalidando el access token y el refresh token.
      *
-     * <p>El token se agrega a la tabla {@code token_blacklist}. A partir de ese momento,
-     * {@code JwtAuthFilter} rechazará cualquier petición que lo use, aunque técnicamente
-     * el token aún no haya expirado según su fecha de vencimiento.</p>
+     * <p>Ambos tokens se agregan a la tabla {@code token_blacklist}. Esto garantiza
+     * que aunque el refresh token no haya expirado, no pueda usarse para obtener
+     * un nuevo access token tras el logout.</p>
      *
-     * @param authHeader valor completo de la cabecera {@code Authorization} (con prefijo {@code "Bearer "})
+     * @param authHeader   valor completo de la cabecera {@code Authorization} (con prefijo {@code "Bearer "})
+     * @param refreshToken refresh token a invalidar (opcional, puede ser {@code null})
      * @return {@link ApiResponseDTO} confirmando el cierre de sesión,
-     *         o con mensaje de error si no se proporcionó token
+     *         o con mensaje de error si no se proporcionó el access token
      */
     @Transactional
-    public ApiResponseDTO<Void> logout(String authHeader) {
+    public ApiResponseDTO<Void> logout(String authHeader, String refreshToken) {
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             return ApiResponseDTO.error("Token no proporcionado");
@@ -383,11 +384,15 @@ public class AuthService {
 
         String token = authHeader.substring(7);
 
-        TokenBlacklist blacklistedToken = TokenBlacklist.builder()
-                .token(token)
-                .build();
+        tokenBlacklistRepository.save(
+                TokenBlacklist.builder().token(token).build()
+        );
 
-        tokenBlacklistRepository.save(blacklistedToken);
+        if (refreshToken != null && !refreshToken.isBlank()) {
+            tokenBlacklistRepository.save(
+                    TokenBlacklist.builder().token(refreshToken).build()
+            );
+        }
 
         return ApiResponseDTO.ok("Sesión cerrada exitosamente");
     }
