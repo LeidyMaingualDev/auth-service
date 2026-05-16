@@ -12,15 +12,12 @@ import java.util.stream.Collectors;
 /**
  * Manejador global de excepciones para el microservicio de autenticación.
  *
- * <p>Intercepta excepciones no manejadas en los controladores y las convierte en
- * respuestas HTTP estructuradas usando {@link ApiResponseDTO}, garantizando que
- * el cliente siempre reciba un formato de error consistente.</p>
- *
  * <p>Excepciones manejadas actualmente:</p>
  * <ul>
  *   <li>{@link MethodArgumentNotValidException} — errores de validación de Bean Validation
  *       ({@code @Valid}), devuelve {@code 400 Bad Request} con el mapa de campos y mensajes.</li>
- *   <li>{@link RuntimeException} — cualquier excepción de tiempo de ejecución no prevista,
+ *   <li>{@link BusinessException} — errores de negocio con código HTTP personalizado.</li>
+ *   <li>{@link RuntimeException} — cualquier excepción no prevista,
  *       devuelve {@code 500 Internal Server Error} con un mensaje genérico.</li>
  * </ul>
  *
@@ -64,6 +61,22 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    /**
+     * Maneja excepciones de negocio lanzadas desde la capa de servicio.
+     *
+     * <p>Devuelve el código HTTP y mensaje definidos en la excepción,
+     * permitiendo respuestas precisas como {@code 404 Not Found},
+     * {@code 409 Conflict} o {@code 401 Unauthorized} según el caso.</p>
+     *
+     * @param ex excepción de negocio con código HTTP y mensaje personalizados
+     * @return respuesta con el código HTTP y mensaje de la excepción
+     */
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ApiResponseDTO<Void>> handleBusinessException(BusinessException ex) {
+        return ResponseEntity.status(ex.getStatus())
+                .body(ApiResponseDTO.error(ex.getMessage()));
     }
 
     /**

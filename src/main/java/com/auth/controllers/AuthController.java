@@ -135,27 +135,29 @@ public class AuthController {
     }
 
     /**
-     * Cierra la sesión del usuario invalidando el token JWT activo.
+     * Cierra la sesión del usuario invalidando su token JWT activo y el refresh token.
      *
      * <p>El token puede llegar como cabecera {@code Authorization: Bearer <token>}
-     * o como cookie {@code access_token}. El token es agregado a la blacklist
-     * para que no pueda reutilizarse aunque no haya expirado.</p>
+     * o como cookie {@code access_token}. Ambos tokens (access y refresh) son
+     * agregados a la blacklist para que no puedan reutilizarse aunque no hayan expirado.</p>
      *
-     * @param authHeader  cabecera HTTP {@code Authorization} (opcional)
-     * @param cookieToken cookie {@code access_token} como alternativa al header (opcional)
+     * @param authHeader          cabecera HTTP {@code Authorization} (opcional)
+     * @param cookieToken         cookie {@code access_token} como alternativa al header (opcional)
+     * @param refreshTokenCookie  cookie {@code refresh_token} a invalidar junto al access token (opcional)
      * @return {@link ApiResponseDTO} confirmando el cierre de sesión
      */
     @PostMapping("/logout")
     public ResponseEntity<ApiResponseDTO<Void>> logout(
             @RequestHeader(value = "Authorization", required = false) String authHeader,
-            @CookieValue(value = "access_token", required = false) String cookieToken) {
+            @CookieValue(value = "access_token", required = false) String cookieToken,
+            @CookieValue(value = "refresh_token", required = false) String refreshTokenCookie) {
 
         String token = authHeader;
         if (token == null && cookieToken != null) {
             token = "Bearer " + cookieToken;
         }
 
-        return ResponseEntity.ok(authService.logout(token));
+        return ResponseEntity.ok(authService.logout(token, refreshTokenCookie));
     }
 
     /**
