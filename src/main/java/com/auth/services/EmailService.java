@@ -9,6 +9,27 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import jakarta.mail.internet.MimeMessage;
 
+
+/**
+ * Servicio de envío de correos electrónicos transaccionales para el flujo de autenticación.
+ *
+ * <p>Todos los métodos son asíncronos ({@code @Async}) para no bloquear el hilo
+ * de la petición HTTP mientras se realiza la comunicación con el servidor SMTP.
+ * Esto requiere que {@code @EnableAsync} esté activo en la clase principal {@code Application}.</p>
+ *
+ * <p>Los correos se envían en formato HTML con estilos inline para garantizar
+ * compatibilidad con los principales clientes de correo.</p>
+ *
+ * <p>Configuración requerida en {@code application.yaml}:</p>
+ * <ul>
+ *   <li>{@code spring.mail.username} — dirección de correo remitente</li>
+ *   <li>{@code spring.mail.host}, {@code port}, {@code properties} — configuración SMTP</li>
+ *   <li>{@code app.frontend-url} — URL base del frontend para construir los enlaces del correo</li>
+ * </ul>
+ *
+ * @author Equipo Qvenly
+ * @version 1.0
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -22,7 +43,21 @@ public class EmailService {
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
-    // Alerta por intentos fallidos
+    /**
+     * Envía una alerta de seguridad al usuario cuando se detectan múltiples intentos
+     * fallidos de inicio de sesión.
+     *
+     * <p>Se invoca desde {@code AuthService} cuando el número de intentos fallidos
+     * supera el umbral configurado ({@code app.max-login-attempts}). El correo incluye
+     * la IP detectada y un enlace para cambiar la contraseña.</p>
+     *
+     * <p>El envío es asíncrono; si falla, se registra el error en el log pero
+     * no interrumpe el flujo de autenticación del usuario.</p>
+     *
+     * @param toEmail   correo electrónico destino del usuario afectado
+     * @param userName  nombre del usuario para personalizar el mensaje
+     * @param ipAddress dirección IP desde la que se realizaron los intentos fallidos
+     */
     @Async
     public void sendLoginAlertEmail(String toEmail, String userName, String ipAddress) {
         try {
@@ -70,7 +105,20 @@ public class EmailService {
         }
     }
 
-    // Enlace de recuperación de contraseña
+    /**
+     * Envía el correo con el enlace de recuperación de contraseña.
+     *
+     * <p>El enlace construido tiene la forma:
+     * {@code {frontendUrl}/auth/reset-password?token={resetToken}}
+     * y es válido por 30 minutos desde su generación.</p>
+     *
+     * <p>El envío es asíncrono; si falla, se registra el error pero el usuario
+     * recibirá igualmente la respuesta genérica del endpoint {@code forgot-password}.</p>
+     *
+     * @param toEmail    correo electrónico destino
+     * @param userName   nombre del usuario para personalizar el mensaje
+     * @param resetToken token UUID de recuperación generado por {@code AuthService}
+     */
     @Async
     public void sendPasswordResetEmail(String toEmail, String userName, String resetToken) {
         try {
@@ -119,7 +167,17 @@ public class EmailService {
         }
     }
 
-    // Confirmación de restablecimiento exitoso
+    /**
+     * Envía una confirmación al usuario notificando que su contraseña fue cambiada exitosamente.
+     *
+     * <p>Se invoca al final del flujo {@code reset-password} después de que la nueva
+     * contraseña ha sido persistida. Incluye un botón de acceso directo al login.</p>
+     *
+     * <p>El envío es asíncrono y los errores se registran sin interrumpir el flujo.</p>
+     *
+     * @param toEmail  correo electrónico destino
+     * @param userName nombre del usuario para personalizar el mensaje
+     */
     @Async
     public void sendPasswordChangedEmail(String toEmail, String userName) {
         try {

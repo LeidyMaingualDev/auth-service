@@ -18,6 +18,32 @@ import java.time.LocalDateTime;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Servicio central de autenticación y gestión del ciclo de vida de las sesiones de usuario.
+ *
+ * <p>Implementa los seis casos de uso principales de autenticación:</p>
+ * <ol>
+ *   <li><strong>Registro</strong>: valida unicidad de email y documento, asigna rol {@code USER},
+ *       genera y devuelve los tokens JWT.</li>
+ *   <li><strong>Login</strong>: autentica con {@code AuthenticationManager}, registra el intento,
+ *       envía alerta si se supera el umbral de fallos, devuelve tokens con el rol incluido.</li>
+ *   <li><strong>Forgot password</strong>: genera un token UUID de un solo uso, lo persiste con TTL
+ *       de 30 minutos, invalida tokens anteriores del usuario y envía el correo de recuperación.</li>
+ *   <li><strong>Reset password</strong>: valida el token, verifica que la nueva contraseña
+ *       sea distinta a la anterior, actualiza el hash en base de datos y envía confirmación.</li>
+ *   <li><strong>Refresh token</strong>: verifica que el refresh token no esté en blacklist ni expirado,
+ *       genera un nuevo par de tokens y los devuelve.</li>
+ *   <li><strong>Logout</strong>: agrega el access token a la blacklist para invalidarlo de inmediato.</li>
+ * </ol>
+ *
+ * <p>Todas las operaciones que modifican la base de datos están anotadas con {@code @Transactional}
+ * para garantizar la consistencia ante fallos parciales.</p>
+ *
+ * @author Equipo Qvenly
+ * @version 1.0
+ * @see JwtService
+ * @see EmailService
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -34,9 +60,25 @@ public class AuthService {
     private final EmailService emailService;
     private final UserDetailsService userDetailsService;
 
+    /** Número máximo de intentos fallidos antes de enviar alerta de seguridad. Configurable en {@code app.max-login-attempts}. */
     @Value("${app.max-login-attempts}")
     private int maxLoginAttempts;
 
+    /**
+     * Registra un nuevo usuario en el sistema.
+     *
+     * <p>Pasos del proceso:</p>
+     * <ol>
+     *   <li>Verifica que el correo y el número de documento no estén ya registrados.</li>
+     *   <li>Carga el rol {@code "USER"} desde la base de datos (debe existir previamente).</li>
+     *   <li>Construye la entidad {@code User} con la contraseña codificada con BCrypt.</li>
+     *   <li>Persiste el usuario y genera un par de tokens JWT (access + refresh).</li>
+     * </ol>
+     *
+     * @param request DTO con los datos del nuevo usuario (validado previamente con {@code @Valid})
+     * @return {@link ApiResponseDTO} con los tokens JWT en caso de éxito,
+     *         o con el mensaje de error si el correo o documento ya existen
+     */
     @Transactional
     public ApiResponseDTO<AuthResponseDTO> register(RegisterRequestDTO request) {
 
@@ -80,6 +122,27 @@ public class AuthService {
         return ApiResponseDTO.ok("Usuario registrado exitosamente", authResponse);
     }
 
+    /**
+     * Autentica un usuario verificando sus credenciales y registrando el intento.
+     *
+     * <p>Pasos del proceso:</p>
+     * <ol>
+     *   <li>Verifica que el usuario exista y que su cuenta esté activa.</li>
+     *   <li>Delega la verificación de credenciales a {@code AuthenticationManager}.</li>
+     *   <li>En caso de éxito: registra el intento como exitoso y genera los tokens.</li>
+     *   <li>En caso de fallo: registra el intento fallido; si supera {@code maxLoginAttempts}
+     *       en los últimos 15 minutos, envía una alerta de seguridad al correo del usuario.</li>
+     * </ol>
+     *
+     * <p>El rol principal del usuario se incluye como claim {@code "role"} en el token
+     * para que el API Gateway pueda tomar decisiones de autorización sin consultar
+     * este microservicio en cada petición.</p>
+     *
+     * @param request   DTO con email, contraseña y flag {@code rememberMe}
+     * @param ipAddress IP del cliente, usada para el registro del intento y la alerta de seguridad
+     * @return {@link ApiResponseDTO} con los tokens JWT en caso de éxito,
+     *         o con el mensaje de error y el conteo de intentos en caso de fallo
+     */
     @Transactional
     public ApiResponseDTO<AuthResponseDTO> login(LoginRequestDTO request, String ipAddress) {
 
@@ -146,6 +209,22 @@ public class AuthService {
         }
     }
 
+    /**
+     * Inicia el flujo de recuperación de contraseña enviando un enlace al correo del usuario.
+     *
+     * <p>Por diseño de seguridad, siempre devuelve el mismo mensaje de éxito independientemente
+     * de si el correo existe o no, para evitar la enumeración de usuarios registrados.</p>
+     *
+     * <p>Si el usuario existe y está activo:</p>
+     * <ol>
+     *   <li>Se invalidan los tokens de recuperación anteriores del usuario.</li>
+     *   <li>Se genera un nuevo token UUID con TTL de 30 minutos.</li>
+     *   <li>Se persiste el token y se envía el correo de forma asíncrona.</li>
+     * </ol>
+     *
+     * @param request DTO con el correo electrónico del usuario
+     * @return {@link ApiResponseDTO} siempre exitoso con mensaje genérico
+     */
     @Transactional
     public ApiResponseDTO<Void> forgotPassword(ForgotPasswordRequestDTO request) {
 
@@ -171,6 +250,24 @@ public class AuthService {
         );
     }
 
+    /**
+     * Restablece la contraseña del usuario usando el token de recuperación de un solo uso.
+     *
+     * <p>Validaciones realizadas:</p>
+     * <ul>
+     *   <li>Las contraseñas nueva y de confirmación deben coincidir.</li>
+     *   <li>El token debe existir en base de datos y no haber sido usado.</li>
+     *   <li>El token no debe haber expirado (TTL de 30 minutos).</li>
+     *   <li>La nueva contraseña debe ser diferente a la contraseña actual.</li>
+     * </ul>
+     *
+     * <p>Tras el restablecimiento exitoso, el token se marca como usado y se envía
+     * un correo de confirmación al usuario.</p>
+     *
+     * @param request DTO con el token UUID, la nueva contraseña y su confirmación
+     * @return {@link ApiResponseDTO} exitoso si el restablecimiento fue correcto,
+     *         o con el mensaje de error específico si alguna validación falla
+     */
     @Transactional
     public ApiResponseDTO<Void> resetPassword(ResetPasswordRequestDTO request) {
 
@@ -211,6 +308,17 @@ public class AuthService {
         return ApiResponseDTO.ok("Contraseña restablecida exitosamente");
     }
 
+    /**
+     * Renueva el access token usando un refresh token válido.
+     *
+     * <p>Verifica que el refresh token no esté en la blacklist (revocado) y no haya expirado.
+     * Si es válido, genera un nuevo par de tokens (access + refresh) con el rol actualizado
+     * del usuario desde la base de datos.</p>
+     *
+     * @param request DTO con el refresh token a renovar
+     * @return {@link ApiResponseDTO} con el nuevo par de tokens en caso de éxito,
+     *         o con el mensaje de error si el token es inválido o ha expirado
+     */
     public ApiResponseDTO<AuthResponseDTO> refreshToken(RefreshTokenRequestDTO request) {
 
         String refreshToken = request.getRefreshToken();
@@ -255,6 +363,17 @@ public class AuthService {
         }
     }
 
+    /**
+     * Cierra la sesión del usuario invalidando su token JWT activo.
+     *
+     * <p>El token se agrega a la tabla {@code token_blacklist}. A partir de ese momento,
+     * {@code JwtAuthFilter} rechazará cualquier petición que lo use, aunque técnicamente
+     * el token aún no haya expirado según su fecha de vencimiento.</p>
+     *
+     * @param authHeader valor completo de la cabecera {@code Authorization} (con prefijo {@code "Bearer "})
+     * @return {@link ApiResponseDTO} confirmando el cierre de sesión,
+     *         o con mensaje de error si no se proporcionó token
+     */
     @Transactional
     public ApiResponseDTO<Void> logout(String authHeader) {
 
@@ -273,6 +392,16 @@ public class AuthService {
         return ApiResponseDTO.ok("Sesión cerrada exitosamente");
     }
 
+    /**
+     * Registra un intento de inicio de sesión en la base de datos para auditoría.
+     *
+     * <p>Se llama tanto en intentos exitosos como fallidos para mantener un historial
+     * completo de la actividad de autenticación.</p>
+     *
+     * @param email     correo electrónico con el que se intentó iniciar sesión
+     * @param ipAddress dirección IP del cliente
+     * @param success   {@code true} si el intento fue exitoso; {@code false} si falló
+     */
     private void registerLoginAttempt(String email, String ipAddress, boolean success) {
         LoginAttempt attempt = LoginAttempt.builder()
                 .email(email)

@@ -1,0 +1,63 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: auth-service
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/auth_and_user
+    username: TU_USUARIO_MYSQL
+    password: TU_PASSWORD_MYSQL
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    database-platform: org.hibernate.dialect.MySQLDialect
+
+  # Configuración de correo (Gmail)
+  # Para obtener el app password: https://myaccount.google.com/apppasswords
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: TU_CORREO@gmail.com
+    password: TU_APP_PASSWORD_GMAIL
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+  cloud:
+    consul:
+      host: localhost
+      port: 8500
+      discovery:
+        service-name: auth-service
+        health-check-path: /actuator/health
+        health-check-interval: 10s
+
+jwt:
+  # Generar con: openssl rand -base64 32
+  secret: TU_SECRET_BASE64_MINIMO_256_BITS
+  expiration: 86400000        # 1 día en ms
+  refresh-expiration: 604800000  # 7 días en ms
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+app:
+  frontend-url: http://localhost:4200
+  max-login-attempts: 5
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    com.auth: DEBUG
+    org.springframework.web: DEBUG
