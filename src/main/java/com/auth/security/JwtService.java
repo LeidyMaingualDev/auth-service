@@ -70,7 +70,7 @@ public class JwtService {
     public String generateToken(UserDetails userDetails, String role) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", role);
-        claims.put("userid", ((User) userDetails).getId());
+        claims.put("userId", ((User) userDetails).getId());
         return buildToken(claims, userDetails, expirationTime);
     }
 
