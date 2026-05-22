@@ -4,8 +4,10 @@ import io.jsonwebtoken.*;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
+import com.auth.models.entities.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
+
 
 import java.security.Key;
 import java.util.*;
@@ -68,6 +70,7 @@ public class JwtService {
     public String generateToken(UserDetails userDetails, String role) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", role);
+        claims.put("userid", ((User) userDetails).getId());
         return buildToken(claims, userDetails, expirationTime);
     }
 
@@ -86,6 +89,7 @@ public class JwtService {
     public String generateToken(UserDetails userDetails, boolean rememberMe, String role) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", role);
+        claims.put("userId", ((User) userDetails).getId());
         long duration = rememberMe ? refreshExpirationTime : expirationTime;
         return buildToken(claims, userDetails, duration);
     }
