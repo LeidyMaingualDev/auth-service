@@ -72,6 +72,7 @@ public class SecurityConfig {
                                 "/auth/forgot-password",
                                 "/auth/reset-password",
                                 "/auth/refresh-token",
+                                "/auth/refresh-from-cookie",
                                 "/auth/confirm-email",
                                 "/actuator/health",
                                 "/actuator/info"
