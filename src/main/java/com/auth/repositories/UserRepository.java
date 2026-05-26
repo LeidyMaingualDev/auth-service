@@ -51,4 +51,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * @return {@code true} si el documento ya está registrado; {@code false} en caso contrario
      */
     boolean existsByDocumentNumber(String documentNumber);
+
+    /**
+     * Busca un usuario por su token de verificación de correo electrónico.
+     * Usado en el flujo de confirmación de cuenta.
+     *
+     * @param verificationToken token UUID enviado al correo del usuario
+     * @return {@link Optional} con el usuario si el token existe, o vacío si no
+     */
+    Optional<User> findByVerificationToken(String verificationToken);
 }

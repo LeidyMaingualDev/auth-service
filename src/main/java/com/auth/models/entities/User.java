@@ -91,6 +91,20 @@ public class User implements UserDetails {
     private LocalDateTime createdAt;
 
     /**
+     * Indica si el correo electrónico del usuario ha sido verificado.
+     * Hasta que sea {@code true} el usuario no puede iniciar sesión.
+     */
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = false;
+
+    /**
+     * Token UUID usado para verificar el correo electrónico.
+     * Se elimina una vez confirmado.
+     */
+    @Column(name = "verification_token", unique = true)
+    private String verificationToken;
+
+    /**
      * Conjunto de roles asignados al usuario. Se carga de forma eagerly para
      * que Spring Security pueda leer las autoridades en cualquier punto del ciclo de vida.
      *

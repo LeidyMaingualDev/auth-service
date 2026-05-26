@@ -106,6 +106,64 @@ public class EmailService {
     }
 
     /**
+     * Envía el correo de verificación de cuenta tras el registro.
+     *
+     * <p>El enlace construido tiene la forma:
+     * {@code {frontendUrl}/auth/confirm-email?token={verificationToken}}
+     * El usuario debe hacer clic para activar su cuenta.</p>
+     *
+     * @param toEmail           correo electrónico destino
+     * @param userName          nombre del usuario para personalizar el mensaje
+     * @param verificationToken token UUID generado durante el registro
+     */
+    @Async
+    public void sendVerificationEmail(String toEmail, String userName, String verificationToken) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            String confirmLink = frontendUrl + "/auth/confirm-email?token=" + verificationToken;
+
+            helper.setFrom(fromEmail);
+            helper.setTo(toEmail);
+            helper.setSubject("✉️ Confirma tu cuenta en Qvenly");
+
+            String htmlContent = """
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background-color: #14b8a6; padding: 20px; text-align: center;">
+                    <h1 style="color: white; margin: 0;">✉️ Confirma tu cuenta</h1>
+                </div>
+                <div style="padding: 30px; background-color: #f9f9f9;">
+                    <p>Hola <strong>%s</strong>,</p>
+                    <p>Gracias por registrarte en <strong>Qvenly</strong>. Para activar tu cuenta haz clic en el botón:</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="%s"
+                           style="background-color: #14b8a6; color: white; padding: 14px 30px;
+                                  text-decoration: none; border-radius: 5px; font-size: 16px; display: inline-block;">
+                            Confirmar mi cuenta
+                        </a>
+                    </div>
+                    <p style="color: #666; font-size: 13px;">
+                        Si no puedes hacer clic en el botón, copia y pega este enlace:<br>
+                        <a href="%s" style="color: #14b8a6;">%s</a>
+                    </p>
+                    <p style="color: #999; font-size: 12px; margin-top: 20px;">
+                        Si no creaste esta cuenta, puedes ignorar este correo.
+                    </p>
+                </div>
+            </div>
+            """.formatted(userName, confirmLink, confirmLink, confirmLink);
+
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+            log.info("Correo de verificación enviado a: {}", toEmail);
+
+        } catch (Exception e) {
+            log.error("Error al enviar correo de verificación a {}: {}", toEmail, e.getMessage());
+        }
+    }
+
+    /**
      * Envía el correo con el enlace de recuperación de contraseña.
      *
      * <p>El enlace construido tiene la forma:
