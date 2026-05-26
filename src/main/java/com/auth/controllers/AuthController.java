@@ -74,15 +74,8 @@ public class AuthController {
             @RequestParam String token) {
 
         ApiResponseDTO<Void> response = authService.confirmEmail(token);
-
-        if (response.isSuccess()) {
-            return ResponseEntity
-                    .status(HttpStatus.FOUND)
-                    .header("Location", frontendUrl + "/auth/login?confirmed=true")
-                    .build();
-        }
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(response);
     }
 
     /**
@@ -158,6 +151,32 @@ public class AuthController {
     public ResponseEntity<ApiResponseDTO<AuthResponseDTO>> refreshToken(
             @Valid @RequestBody RefreshTokenRequestDTO request) {
 
+        ApiResponseDTO<AuthResponseDTO> response = authService.refreshToken(request);
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.UNAUTHORIZED;
+        return ResponseEntity.status(status).body(response);
+    }
+
+    /**
+     * Renueva el access token leyendo el refresh token directamente de la cookie.
+     *
+     * <p>Usado por el interceptor del frontend cuando detecta un {@code 401 Unauthorized}.
+     * Lee el {@code refresh_token} de la cookie HttpOnly para que el frontend
+     * no necesite acceder al valor del token directamente.</p>
+     *
+     * @param refreshTokenCookie cookie {@code refresh_token} enviada automáticamente por el navegador
+     * @return {@link ApiResponseDTO} con los nuevos tokens en caso de éxito,
+     *         o {@code 401 Unauthorized} si la cookie no existe o el token es inválido
+     */
+    @PostMapping("/refresh-from-cookie")
+    public ResponseEntity<ApiResponseDTO<AuthResponseDTO>> refreshFromCookie(
+            @CookieValue(value = "refresh_token", required = false) String refreshTokenCookie) {
+
+        if (refreshTokenCookie == null || refreshTokenCookie.isBlank()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponseDTO.error("No hay sesión activa"));
+        }
+
+        RefreshTokenRequestDTO request = new RefreshTokenRequestDTO(refreshTokenCookie);
         ApiResponseDTO<AuthResponseDTO> response = authService.refreshToken(request);
         HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.UNAUTHORIZED;
         return ResponseEntity.status(status).body(response);
