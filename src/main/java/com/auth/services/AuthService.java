@@ -80,7 +80,7 @@ public class AuthService {
      *         o con el mensaje de error si el correo o documento ya existen
      */
     @Transactional
-    public ApiResponseDTO<AuthResponseDTO> register(RegisterRequestDTO request) {
+    public ApiResponseDTO<Void> register(RegisterRequestDTO request) {
 
         if (userRepository.existsByEmail(request.getEmail())) {
             return ApiResponseDTO.error("El correo electrónico ya está registrado");
@@ -102,24 +102,20 @@ public class AuthService {
         user.setDocumentNumber(request.getDocumentNumber());
         user.setDocumentType(request.getDocumentType());
         user.setPhoneNumber(request.getPhoneNumber());
-        user.setActive(true);
+        user.setActive(false);
+        user.setEmailVerified(false);
+        user.setVerificationToken(UUID.randomUUID().toString());
         user.setRoles(Set.of(userRole));
 
         userRepository.save(user);
 
-        // Incluir rol en el token
-        String token = jwtService.generateToken(user, "USER");
-        String refreshToken = jwtService.generateRefreshToken(user);
+        emailService.sendVerificationEmail(
+                user.getEmail(), user.getName(), user.getVerificationToken()
+        );
 
-        AuthResponseDTO authResponse = AuthResponseDTO.builder()
-                .token(token)
-                .refreshToken(refreshToken)
-                .email(user.getEmail())
-                .name(user.getName())
-                .role("USER")
-                .build();
-
-        return ApiResponseDTO.ok("Usuario registrado exitosamente", authResponse);
+        return ApiResponseDTO.ok(
+                "Registro exitoso. Revisa tu correo para confirmar tu cuenta."
+        );
     }
 
     /**
@@ -150,6 +146,12 @@ public class AuthService {
 
         if (user == null) {
             return ApiResponseDTO.error("Credenciales inválidas");
+        }
+
+        if (!user.isEmailVerified()) {
+            return ApiResponseDTO.error(
+                    "Debes confirmar tu correo electrónico antes de iniciar sesión."
+            );
         }
 
         if (!user.isActive()) {
@@ -414,5 +416,35 @@ public class AuthService {
                 .success(success)
                 .build();
         loginAttemptRepository.save(attempt);
+    }
+
+    /**
+     * Confirma el correo electrónico del usuario usando el token de verificación.
+     *
+     * <p>Activa la cuenta ({@code isActive = true}) y elimina el token de verificación
+     * una vez usado. Si el token no existe o ya fue usado devuelve error.</p>
+     *
+     * @param token token UUID enviado al correo del usuario durante el registro
+     * @return {@link ApiResponseDTO} exitoso si la confirmación fue correcta
+     */
+    @Transactional
+    public ApiResponseDTO<Void> confirmEmail(String token) {
+
+        User user = userRepository.findByVerificationToken(token).orElse(null);
+
+        if (user == null) {
+            return ApiResponseDTO.error("El enlace de confirmación no es válido");
+        }
+
+        if (user.isEmailVerified()) {
+            return ApiResponseDTO.error("El correo ya fue confirmado anteriormente");
+        }
+
+        user.setEmailVerified(true);
+        user.setActive(true);
+        user.setVerificationToken(null);
+        userRepository.save(user);
+
+        return ApiResponseDTO.ok("Correo confirmado exitosamente. Ya puedes iniciar sesión.");
     }
 }

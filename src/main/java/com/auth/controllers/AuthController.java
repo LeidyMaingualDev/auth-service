@@ -5,6 +5,7 @@ import com.auth.services.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -35,6 +36,8 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AuthService authService;
+    @Value("${app.frontend-url}")
+    private String frontendUrl;
 
     /**
      * Registra un nuevo usuario en el sistema.
@@ -48,12 +51,38 @@ public class AuthController {
      *         o con el mensaje de error en caso de fallo
      */
     @PostMapping("/register")
-    public ResponseEntity<ApiResponseDTO<AuthResponseDTO>> register(
+    public ResponseEntity<ApiResponseDTO<Void>> register(
             @Valid @RequestBody RegisterRequestDTO request) {
 
-        ApiResponseDTO<AuthResponseDTO> apiResponse = authService.register(request);
+        ApiResponseDTO<Void> apiResponse = authService.register(request);
         HttpStatus status = apiResponse.isSuccess() ? HttpStatus.CREATED : HttpStatus.BAD_REQUEST;
         return ResponseEntity.status(status).body(apiResponse);
+    }
+
+    /**
+     * Confirma el correo electrónico del usuario usando el token de verificación.
+     *
+     * <p>El usuario llega aquí desde el enlace enviado a su correo tras el registro.
+     * Si el token es válido, activa la cuenta y redirige al login con un mensaje de éxito.</p>
+     *
+     * @param token token UUID de verificación recibido como parámetro en la URL
+     * @return redirección al login con {@code ?confirmed=true} si el token es válido,
+     *         o respuesta de error si el token no existe o ya fue usado
+     */
+    @GetMapping("/confirm-email")
+    public ResponseEntity<ApiResponseDTO<Void>> confirmEmail(
+            @RequestParam String token) {
+
+        ApiResponseDTO<Void> response = authService.confirmEmail(token);
+
+        if (response.isSuccess()) {
+            return ResponseEntity
+                    .status(HttpStatus.FOUND)
+                    .header("Location", frontendUrl + "/auth/login?confirmed=true")
+                    .build();
+        }
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
     /**
