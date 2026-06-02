@@ -30,7 +30,7 @@ public class ResetPasswordRequestDTO {
     @NotBlank(message = "La nueva contraseña es obligatoria")
     @Size(min = 8, message = "La contraseña debe tener mínimo 8 caracteres")
     @Pattern(
-            regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$",
+            regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[\\W_])[A-Za-z\\d\\W_]+$",
             message = "La contraseña debe tener al menos una mayúscula, una minúscula, un número y un carácter especial"
     )
     private String newPassword;
