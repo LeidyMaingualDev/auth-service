@@ -1,5 +1,10 @@
 server:
   port: 8080
+  servlet:
+    session:
+      cookie:
+        same-site: lax
+        secure: false
 
 spring:
   application:
@@ -7,9 +12,29 @@ spring:
 
   datasource:
     url: jdbc:mysql://localhost:3306/auth_and_user
-    username: TU_USUARIO_MYSQL
-    password: TU_PASSWORD_MYSQL
+    username: root
+    password: YOUR_DB_PASSWORD
     driver-class-name: com.mysql.cj.jdbc.Driver
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: "YOUR_GOOGLE_CLIENT_ID"
+            client-secret: "YOUR_GOOGLE_CLIENT_SECRET"
+            scope:
+              - email
+              - profile
+            redirect-uri: "http://localhost:8080/login/oauth2/code/google"
+            client-authentication-method: client_secret_post
+            authorization-grant-type: authorization_code
+        provider:
+          google:
+            authorization-uri: https://accounts.google.com/o/oauth2/auth
+            token-uri: https://oauth2.googleapis.com/token
+            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
+            user-name-attribute: sub
 
   jpa:
     hibernate:
@@ -17,13 +42,11 @@ spring:
     show-sql: true
     database-platform: org.hibernate.dialect.MySQLDialect
 
-  # Configuración de correo (Gmail)
-  # Para obtener el app password: https://myaccount.google.com/apppasswords
   mail:
     host: smtp.gmail.com
     port: 587
-    username: TU_CORREO@gmail.com
-    password: TU_APP_PASSWORD_GMAIL
+    username: YOUR_EMAIL@gmail.com
+    password: YOUR_APP_PASSWORD
     properties:
       mail:
         smtp:
@@ -41,10 +64,9 @@ spring:
         health-check-interval: 10s
 
 jwt:
-  # Generar con: openssl rand -base64 32
-  secret: TU_SECRET_BASE64_MINIMO_256_BITS
-  expiration: 86400000        # 1 día en ms
-  refresh-expiration: 604800000  # 7 días en ms
+  secret: YOUR_JWT_SECRET_BASE64
+  expiration: 86400000
+  refresh-expiration: 604800000
 
 management:
   endpoints:
