@@ -14,7 +14,7 @@ import com.auth.models.entities.User;
 import com.auth.models.enums.DocumentType;
 import com.auth.repositories.TokenBlacklistRepository;
 import com.auth.repositories.UserRepository;
-import com.auth.security.roles.RoleGuard;
+import com.auth.security.RoleGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -28,7 +28,15 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Servicio para realizar mutaciones en el perfil del usuario, como actualización de información y cambio de contraseña, y para manejar la eliminación lógica del perfil. Utiliza el RoleGuard para verificar la autenticación y autorización del usuario antes de permitir las mutaciones en el perfil. Proporciona métodos para actualizar el perfil del usuario, cambiar la contraseña, confirmar la contraseña actual y eliminar el perfil, manejando las validaciones necesarias y publicando notificaciones relevantes a través del ProfileNotificationPublisherService cuando se realizan cambios en el perfil del usuario.
+ * Servicio para realizar mutaciones en el perfil del usuario, como
+ * actualización de información y cambio de contraseña, y para manejar la
+ * eliminación lógica del perfil. Utiliza el RoleGuard para verificar la
+ * autenticación y autorización del usuario antes de permitir las mutaciones en
+ * el perfil. Proporciona métodos para actualizar el perfil del usuario, cambiar
+ * la contraseña, confirmar la contraseña actual y eliminar el perfil, manejando
+ * las validaciones necesarias y publicando notificaciones relevantes a través
+ * del ProfileNotificationPublisherService cuando se realizan cambios en el
+ * perfil del usuario.
  *
  * @author Natali Ramirez
  * @version 1.0
@@ -45,7 +53,8 @@ public class ProfileMutationService {
 
     /**
      * Actualiza la información del perfil del usuario.
-     * @param request los datos de actualización del perfil
+     * 
+     * @param request    los datos de actualización del perfil
      * @param authHeader el encabezado de autenticación
      * @return la respuesta con el perfil actualizado
      */
@@ -90,13 +99,13 @@ public class ProfileMutationService {
 
         return ApiResponseDTO.ok(
                 "Perfil actualizado exitosamente",
-                mapToUserProfileResponse(updatedUser)
-        );
+                mapToUserProfileResponse(updatedUser));
     }
 
     /**
      * Cambia la contraseña del usuario.
-     * @param request los datos de cambio de contraseña
+     * 
+     * @param request    los datos de cambio de contraseña
      * @param authHeader el encabezado de autenticación
      * @return la respuesta con el resultado del cambio de contraseña
      */
@@ -126,7 +135,8 @@ public class ProfileMutationService {
 
     /**
      * Confirma la contraseña del usuario.
-     * @param request los datos de confirmación de contraseña
+     * 
+     * @param request    los datos de confirmación de contraseña
      * @param authHeader el encabezado de autenticación
      * @return la respuesta con el resultado de la confirmación
      */
@@ -150,6 +160,7 @@ public class ProfileMutationService {
 
     /**
      * Elimina el perfil del usuario de forma lógica.
+     * 
      * @param authHeader el encabezado de autenticación
      * @return la respuesta con el resultado de la eliminación
      */
@@ -175,6 +186,7 @@ public class ProfileMutationService {
 
     /**
      * Obtiene el usuario autenticado y activo.
+     * 
      * @param authHeader el encabezado de autenticación
      * @return el usuario autenticado y activo
      */
@@ -184,6 +196,7 @@ public class ProfileMutationService {
 
     /**
      * Mapea la entidad User a un DTO de respuesta de perfil de usuario.
+     * 
      * @param user la entidad User
      * @return el DTO de respuesta de perfil de usuario
      */
@@ -191,15 +204,14 @@ public class ProfileMutationService {
         List<String> roles = user.getRoles() == null
                 ? List.of()
                 : user.getRoles().stream()
-                .map(Role::getName)
-                .filter(Objects::nonNull)
-                .sorted()
-                .toList();
+                        .map(Role::getName)
+                        .filter(Objects::nonNull)
+                        .sorted()
+                        .toList();
 
         String fullName = String.format("%s %s",
                 user.getName() != null ? user.getName() : "",
-                user.getLastName() != null ? user.getLastName() : ""
-        ).trim();
+                user.getLastName() != null ? user.getLastName() : "").trim();
 
         boolean active = user.isActive();
 
@@ -222,6 +234,7 @@ public class ProfileMutationService {
 
     /**
      * Resuelve el rol principal del usuario en función de sus roles asignados.
+     * 
      * @param roles la lista de roles del usuario
      * @return el rol principal del usuario
      */
@@ -237,6 +250,7 @@ public class ProfileMutationService {
 
     /**
      * Analiza el tipo de documento y lo convierte en una instancia de DocumentType.
+     * 
      * @param documentType el tipo de documento como cadena
      * @return la instancia de DocumentType correspondiente
      */
@@ -254,7 +268,9 @@ public class ProfileMutationService {
     }
 
     /**
-     * Normaliza un valor requerido, eliminando espacios en blanco y devolviendo null si es vacío.
+     * Normaliza un valor requerido, eliminando espacios en blanco y devolviendo
+     * null si es vacío.
+     * 
      * @param value el valor a normalizar
      * @return el valor normalizado o null si es vacío
      */
@@ -263,7 +279,9 @@ public class ProfileMutationService {
     }
 
     /**
-     * Normaliza un valor opcional, eliminando espacios en blanco y devolviendo null si es vacío.
+     * Normaliza un valor opcional, eliminando espacios en blanco y devolviendo null
+     * si es vacío.
+     * 
      * @param value el valor a normalizar
      * @return el valor normalizado o null si es vacío
      */
@@ -276,17 +294,31 @@ public class ProfileMutationService {
 
     /**
      * Añade un token de acceso a la lista negra.
+     *
      * @param authHeader el encabezado de autenticación
      */
     private void blacklistBearerToken(String authHeader) {
         String token = extractBearerToken(authHeader);
-        if (token != null && !tokenBlacklistRepository.existsByToken(token)) {
-            tokenBlacklistRepository.save(TokenBlacklist.builder().token(token).build());
+
+        if (token == null || token.isBlank()) {
+            return;
         }
+
+        if (tokenBlacklistRepository.existsByToken(token)) {
+            return;
+        }
+
+        TokenBlacklist tokenBlacklist = TokenBlacklist.builder()
+                .token(token)
+                .build();
+
+        tokenBlacklistRepository.save(
+                Objects.requireNonNull(tokenBlacklist, "El token de lista negra no puede ser null"));
     }
 
     /**
      * Extrae el token de acceso del encabezado de autenticación.
+     * 
      * @param authHeader el encabezado de autenticación
      * @return el token de acceso o null si no es válido
      */

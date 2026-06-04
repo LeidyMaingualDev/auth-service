@@ -1,4 +1,4 @@
-package com.auth.security.roles;
+package com.auth.security;
 
 import com.auth.exceptions.BusinessException;
 import com.auth.models.entities.Role;
@@ -6,7 +6,6 @@ import com.auth.models.entities.User;
 import com.auth.models.enums.SystemRole;
 import com.auth.repositories.TokenBlacklistRepository;
 import com.auth.repositories.UserRepository;
-import com.auth.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;

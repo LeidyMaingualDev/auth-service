@@ -4,7 +4,7 @@ import com.auth.models.dtos.ApiResponseDTO;
 import com.auth.models.dtos.UserProfileResponseDTO;
 import com.auth.models.entities.Role;
 import com.auth.models.entities.User;
-import com.auth.security.roles.RoleGuard;
+import com.auth.security.RoleGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -85,6 +85,9 @@ public class ProfileService {
     private String resolveMainRole(List<String> roles) {
         if (roles.contains("ADMIN")) {
             return "ADMIN";
+        }
+        if (roles.contains("ORGANIZER")) {
+            return "ORGANIZER";
         }
         if (roles.contains("USER")) {
             return "USER";

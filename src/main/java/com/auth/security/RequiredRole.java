@@ -1,4 +1,4 @@
-package com.auth.security.roles;
+package com.auth.security;
 
 import com.auth.models.enums.SystemRole;
 

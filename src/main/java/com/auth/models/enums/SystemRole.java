@@ -5,9 +5,13 @@ package com.auth.models.enums;
  */
 public enum SystemRole {
     /** Rol de administrador */
-    ADMIN (value = "ADMIN"),
+    ADMIN ("ADMIN"),
+
+    /** Rol de organizador */
+    ORGANIZER ("ORGANIZER"),
+
     /** Rol de usuario */
-    USER (value = "USER"),
+    USER ("USER");
 
     private final String value;
 

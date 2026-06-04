@@ -42,7 +42,9 @@ import java.io.IOException;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+
     private final UserDetailsService userDetailsService;
+    
     private final TokenBlacklistRepository tokenBlacklistRepository; // RF06
 
     /**

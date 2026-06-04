@@ -10,7 +10,14 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 
 /**
- * Servicio para publicar notificaciones relacionadas con el perfil del usuario, como cambios de contraseña y eliminación de perfil. Utiliza el EmailService para enviar correos electrónicos de notificación a los usuarios cuando se producen eventos relacionados con su perfil. Proporciona métodos para publicar eventos de cambio de contraseña y eliminación de perfil, creando DTOs de notificación con la información relevante del usuario y el evento, y manejando cualquier excepción que pueda ocurrir durante el proceso de publicación de la notificación.
+ * Servicio para publicar notificaciones relacionadas con el perfil del usuario,
+ * como cambios de contraseña y eliminación de perfil. Utiliza el EmailService
+ * para enviar correos electrónicos de notificación a los usuarios cuando se
+ * producen eventos relacionados con su perfil. Proporciona métodos para
+ * publicar eventos de cambio de contraseña y eliminación de perfil, creando
+ * DTOs de notificación con la información relevante del usuario y el evento, y
+ * manejando cualquier excepción que pueda ocurrir durante el proceso de
+ * publicación de la notificación.
  *
  * @author Natali Ramirez
  * @version 1.0
@@ -26,7 +33,9 @@ public class ProfileNotificationPublisherService {
     private final EmailService emailService;
 
     /**
-     * Publica una notificación de cambio de contraseña para el usuario especificado.
+     * Publica una notificación de cambio de contraseña para el usuario
+     * especificado.
+     * 
      * @param user el usuario para quien se publicará la notificación
      */
     public void publishPasswordChanged(User user) {
@@ -48,7 +57,9 @@ public class ProfileNotificationPublisherService {
     }
 
     /**
-     * Publica una notificación de eliminación de perfil para el usuario especificado.
+     * Publica una notificación de eliminación de perfil para el usuario
+     * especificado.
+     *
      * @param user el usuario para quien se publicará la notificación
      */
     public void publishProfileDeleted(User user) {
@@ -63,9 +74,9 @@ public class ProfileNotificationPublisherService {
 
         try {
             emailService.sendProfileDeletedEmail(user.getEmail(), user.getName());
-            log.info("Evento de eliminacion logica de perfil preparado: {}", event);
+            log.info("Evento de eliminación lógica de perfil preparado: {}", event);
         } catch (Exception e) {
-            log.error("Error al publicar evento de eliminacion logica de perfil para usuario {}: {}",
+            log.error("Error al publicar evento de eliminación lógica de perfil para usuario {}: {}",
                     user.getId(), e.getMessage());
         }
     }
