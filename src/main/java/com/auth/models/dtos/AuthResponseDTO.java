@@ -37,6 +37,10 @@ public class AuthResponseDTO {
      */
     private String refreshToken;
 
+    private Long userId;
+
+
+
     /** Correo electrónico del usuario autenticado. */
     private String email;
 
