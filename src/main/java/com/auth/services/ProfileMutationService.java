@@ -242,6 +242,9 @@ public class ProfileMutationService {
         if (roles.contains("ADMIN")) {
             return "ADMIN";
         }
+        if (roles.contains("ORGANIZER")){
+            return "ORGANIZER";
+        }
         if (roles.contains("USER")) {
             return "USER";
         }

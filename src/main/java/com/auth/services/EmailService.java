@@ -9,7 +9,6 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import jakarta.mail.internet.MimeMessage;
-import org.springframework.mail.SimpleMailMessage;
 
 /**
  * Servicio de envío de correos electrónicos transaccionales para el flujo de
@@ -311,8 +310,6 @@ public class EmailService {
         }
     }
 
-    private final JavaMailSender javaMailSender;
-
     /**
      * Envía un correo de notificación al usuario cuando su perfil es desactivado.
      *
@@ -339,6 +336,6 @@ public class EmailService {
                         "Atentamente,\n" +
                         "Equipo Qvenly");
 
-        javaMailSender.send(message);
+        mailSender.send(message);
     }
 }
