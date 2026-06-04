@@ -185,6 +185,7 @@ public class AuthService {
                     .email(user.getEmail())
                     .name(user.getName())
                     .role(role)
+                    .userId(user.getId())
                     .build();
 
             return ApiResponseDTO.ok("Inicio de sesión exitoso", authResponse);
