@@ -4,6 +4,7 @@ import com.auth.models.dtos.ApiResponseDTO;
 import com.auth.models.dtos.ChangePasswordRequestDTO;
 import com.auth.models.dtos.ConfirmPasswordRequestDTO;
 import com.auth.models.dtos.ConfirmPasswordResponseDTO;
+import com.auth.models.dtos.DeleteProfileRequestDTO;
 import com.auth.models.dtos.DeleteProfileResponseDTO;
 import com.auth.models.dtos.UpdateProfileRequestDTO;
 import com.auth.models.dtos.UserProfileResponseDTO;
@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * ProfileMutationController es responsable de manejar los endpoints relacionados con las mutaciones(edición) del perfil del usuario.
+ * ProfileMutationController es responsable de manejar los endpoints relacionados con las mutaciones(edicion) del perfil del usuario.
  *
  * @author Natali Ramirez
  * @version 1.0
@@ -32,7 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProfileMutationController {
 
     /**
-     * The ProfileMutationService es responsable de manejar la lógica de negocio relacionada con las mutaciones del perfil de usuario.
+     * The ProfileMutationService es responsable de manejar la logica de negocio relacionada con las mutaciones del perfil de usuario.
      */
     private final ProfileMutationService profileMutationService;
 
@@ -41,7 +42,7 @@ public class ProfileMutationController {
      *
      * @param request the update profile request
      * @param authHeader the authorization header
-     * @return la respuesta con el perfil actualizado o un error en caso de que la actualización falle.
+     * @return la respuesta con el perfil actualizado o un error en caso de que la actualizacion falle.
      */
     @PutMapping
     public ResponseEntity<ApiResponseDTO<UserProfileResponseDTO>> updateProfile(
@@ -52,11 +53,11 @@ public class ProfileMutationController {
     }
 
     /**
-     * Cambia la contraseña del usuario autenticado.
+     * Cambia la contrasena del usuario autenticado.
      *
      * @param request the change password request
      * @param authHeader the authorization header
-     * @return la respuesta indicando el resultado de la operación (contraseña editada exitosamente o error)
+     * @return la respuesta indicando el resultado de la operacion (contrasena editada exitosamente o error)
      */
     @PutMapping("/password")
     public ResponseEntity<ApiResponseDTO<Void>> changePassword(
@@ -67,11 +68,11 @@ public class ProfileMutationController {
     }
 
     /**
-     * Confirma la contraseña del usuario autenticado.
+     * Confirma la contrasena del usuario autenticado.
      *
      * @param request the confirm password request
      * @param authHeader the authorization header
-     * @return la respuesta indicando el resultado de la operación (contraseña confirmada exitosamente o error)
+     * @return la respuesta indicando el resultado de la operacion (contrasena confirmada exitosamente o error)
      */
     @PostMapping("/confirm-password")
     public ResponseEntity<ApiResponseDTO<ConfirmPasswordResponseDTO>> confirmPassword(
@@ -82,15 +83,18 @@ public class ProfileMutationController {
     }
 
     /**
-     * Elimina el perfil del usuario autenticado.
+     * Elimina definitivamente el perfil del usuario autenticado previa
+     * confirmacion de contrasena.
      *
+     * @param request solicitud con la contrasena actual del usuario
      * @param authHeader the authorization header
-     * @return la respuesta indicando el resultado de la operación (perfil eliminado exitosamente o error)
+     * @return la respuesta indicando el resultado de la operacion
      */
     @DeleteMapping
     public ResponseEntity<ApiResponseDTO<DeleteProfileResponseDTO>> deleteProfile(
+            @Valid @RequestBody DeleteProfileRequestDTO request,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
-        return ResponseEntity.ok(profileMutationService.deleteProfile(authHeader));
+        return ResponseEntity.ok(profileMutationService.deleteProfile(request, authHeader));
     }
 }

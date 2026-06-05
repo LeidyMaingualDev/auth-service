@@ -311,6 +311,65 @@ public class EmailService {
     }
 
     /**
+     * Envia un correo de seguridad por cambio de contrasena y propaga errores al
+     * servicio que registra el estado de la notificacion.
+     *
+     * @param email correo del usuario
+     * @param name  nombre del usuario
+     *
+     * @author Natali Ramirez
+     * @version 1.0
+     */
+    public void sendPasswordChangedProfileEmail(String email, String name) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("El correo del usuario es obligatorio");
+        }
+
+        String userName = (name != null && !name.isBlank()) ? name : "usuario";
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(email);
+        message.setSubject("Contrasena actualizada - Qvenly");
+        message.setText(
+                "Hola " + userName + ",\n\n" +
+                        "Te informamos que la contrasena de tu cuenta fue actualizada correctamente.\n\n" +
+                        "Si tu no realizaste este cambio, comunicate con soporte de inmediato.\n\n" +
+                        "Atentamente,\n" +
+                        "Equipo Qvenly");
+
+        mailSender.send(message);
+    }
+
+    /**
+     * Envia un correo antes de la eliminacion definitiva del perfil y propaga
+     * errores para permitir reintentos.
+     *
+     * @param email correo del usuario
+     * @param name  nombre del usuario
+     *
+     * @author Natali Ramirez
+     * @version 1.0
+     */
+    public void sendProfileDeletedBeforeDeletionEmail(String email, String name) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("El correo del usuario es obligatorio");
+        }
+
+        String userName = (name != null && !name.isBlank()) ? name : "usuario";
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(email);
+        message.setSubject("Eliminacion de perfil - Qvenly");
+        message.setText(
+                "Hola " + userName + ",\n\n" +
+                        "Te informamos que tu perfil en Qvenly sera eliminado y desvinculado del sistema.\n\n" +
+                        "Si tu no solicitaste esta eliminacion, comunicate con soporte de inmediato.\n\n" +
+                        "Atentamente,\n" +
+                        "Equipo Qvenly");
+
+        mailSender.send(message);
+    }
+    /**
      * Envía un correo de notificación al usuario cuando su perfil es desactivado.
      *
      * @param email correo del usuario

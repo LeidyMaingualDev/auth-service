@@ -5,6 +5,7 @@ import com.auth.models.dtos.ApiResponseDTO;
 import com.auth.models.dtos.ChangePasswordRequestDTO;
 import com.auth.models.dtos.ConfirmPasswordRequestDTO;
 import com.auth.models.dtos.ConfirmPasswordResponseDTO;
+import com.auth.models.dtos.DeleteProfileRequestDTO;
 import com.auth.models.dtos.DeleteProfileResponseDTO;
 import com.auth.models.dtos.UpdateProfileRequestDTO;
 import com.auth.models.dtos.UserProfileResponseDTO;
@@ -16,12 +17,14 @@ import com.auth.repositories.TokenBlacklistRepository;
 import com.auth.repositories.UserRepository;
 import com.auth.security.RoleGuard;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -29,33 +32,31 @@ import java.util.UUID;
 
 /**
  * Servicio para realizar mutaciones en el perfil del usuario, como
- * actualización de información y cambio de contraseña, y para manejar la
- * eliminación lógica del perfil. Utiliza el RoleGuard para verificar la
- * autenticación y autorización del usuario antes de permitir las mutaciones en
- * el perfil. Proporciona métodos para actualizar el perfil del usuario, cambiar
- * la contraseña, confirmar la contraseña actual y eliminar el perfil, manejando
- * las validaciones necesarias y publicando notificaciones relevantes a través
- * del ProfileNotificationPublisherService cuando se realizan cambios en el
- * perfil del usuario.
+ * actualizacion de informacion y cambio de contrasena, y para manejar la
+ * eliminacion del perfil. Utiliza el RoleGuard para verificar la autenticacion
+ * y autorizacion del usuario antes de permitir las mutaciones en el perfil.
  *
  * @author Natali Ramirez
  * @version 1.0
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ProfileMutationService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final TokenBlacklistRepository tokenBlacklistRepository;
     private final ProfileNotificationPublisherService notificationPublisherService;
+    private final NotificationInboxService notificationInboxService;
+    private final UserUnlinkingService userUnlinkingService;
     private final RoleGuard roleGuard;
 
     /**
-     * Actualiza la información del perfil del usuario.
-     * 
-     * @param request    los datos de actualización del perfil
-     * @param authHeader el encabezado de autenticación
+     * Actualiza la informacion del perfil del usuario.
+     *
+     * @param request    los datos de actualizacion del perfil
+     * @param authHeader el encabezado de autenticacion
      * @return la respuesta con el perfil actualizado
      */
     @Transactional
@@ -65,10 +66,23 @@ public class ProfileMutationService {
 
         User user = getActiveAuthenticatedUser(authHeader);
 
+        String newName = normalizeRequired(request.getName());
+        String newLastName = normalizeRequired(request.getLastName());
         String newEmail = normalizeRequired(request.getEmail());
+        String newPhoneNumber = normalizeOptional(request.getPhoneNumber());
         String newDocumentNumber = normalizeOptional(request.getDocumentNumber());
-        boolean emailChanged = !newEmail.equalsIgnoreCase(user.getEmail());
+        DocumentType newDocumentType = parseDocumentType(request.getDocumentType());
+
+        boolean emailChanged = newEmail != null && !newEmail.equalsIgnoreCase(user.getEmail());
         boolean documentChanged = !Objects.equals(newDocumentNumber, user.getDocumentNumber());
+        List<String> changedFields = detectChangedFields(
+                user,
+                newName,
+                newLastName,
+                newEmail,
+                newPhoneNumber,
+                newDocumentType,
+                newDocumentNumber);
 
         if (emailChanged) {
             userRepository.findByEmail(newEmail)
@@ -84,11 +98,11 @@ public class ProfileMutationService {
             throw BusinessException.conflict("El numero de documento ya esta registrado");
         }
 
-        user.setName(normalizeRequired(request.getName()));
-        user.setLastName(normalizeRequired(request.getLastName()));
+        user.setName(newName);
+        user.setLastName(newLastName);
         user.setEmail(newEmail);
-        user.setPhoneNumber(normalizeOptional(request.getPhoneNumber()));
-        user.setDocumentType(parseDocumentType(request.getDocumentType()));
+        user.setPhoneNumber(newPhoneNumber);
+        user.setDocumentType(newDocumentType);
         user.setDocumentNumber(newDocumentNumber);
 
         User updatedUser = userRepository.save(user);
@@ -97,17 +111,26 @@ public class ProfileMutationService {
             blacklistBearerToken(authHeader);
         }
 
+        if (!changedFields.isEmpty()) {
+            try {
+                notificationInboxService.createProfileUpdatedNotification(updatedUser, changedFields);
+            } catch (Exception e) {
+                log.error("Error al registrar notificacion de actualizacion de perfil para usuario {}: {}",
+                        updatedUser.getId(), e.getMessage());
+            }
+        }
+
         return ApiResponseDTO.ok(
                 "Perfil actualizado exitosamente",
                 mapToUserProfileResponse(updatedUser));
     }
 
     /**
-     * Cambia la contraseña del usuario.
-     * 
-     * @param request    los datos de cambio de contraseña
-     * @param authHeader el encabezado de autenticación
-     * @return la respuesta con el resultado del cambio de contraseña
+     * Cambia la contrasena del usuario.
+     *
+     * @param request    los datos de cambio de contrasena
+     * @param authHeader el encabezado de autenticacion
+     * @return la respuesta con el resultado del cambio de contrasena
      */
     @Transactional
     public ApiResponseDTO<Void> changePassword(ChangePasswordRequestDTO request, String authHeader) {
@@ -128,17 +151,18 @@ public class ProfileMutationService {
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
 
+        blacklistBearerToken(authHeader);
         notificationPublisherService.publishPasswordChanged(user);
 
         return ApiResponseDTO.ok("Contrasena actualizada exitosamente");
     }
 
     /**
-     * Confirma la contraseña del usuario.
-     * 
-     * @param request    los datos de confirmación de contraseña
-     * @param authHeader el encabezado de autenticación
-     * @return la respuesta con el resultado de la confirmación
+     * Confirma la contrasena del usuario.
+     *
+     * @param request    los datos de confirmacion de contrasena
+     * @param authHeader el encabezado de autenticacion
+     * @return la respuesta con el resultado de la confirmacion
      */
     @Transactional(readOnly = true)
     public ApiResponseDTO<ConfirmPasswordResponseDTO> confirmPassword(
@@ -159,10 +183,10 @@ public class ProfileMutationService {
     }
 
     /**
-     * Elimina el perfil del usuario de forma lógica.
-     * 
-     * @param authHeader el encabezado de autenticación
-     * @return la respuesta con el resultado de la eliminación
+     * Elimina el perfil del usuario de forma logica.
+     *
+     * @param authHeader el encabezado de autenticacion
+     * @return la respuesta con el resultado de la eliminacion
      */
     @Transactional
     public ApiResponseDTO<DeleteProfileResponseDTO> deleteProfile(String authHeader) {
@@ -185,9 +209,49 @@ public class ProfileMutationService {
     }
 
     /**
+     * Elimina definitivamente el perfil del usuario tras validar su contrasena.
+     *
+     * <p>
+     * La notificacion de eliminacion se intenta enviar por correo antes de la
+     * desvinculacion. Si el envio falla, queda registrado para reintento y la
+     * eliminacion continua.
+     * </p>
+     *
+     * @param request    solicitud con la contrasena actual del usuario
+     * @param authHeader el encabezado de autenticacion
+     * @return la respuesta con el resultado de la eliminacion definitiva
+     */
+    @Transactional
+    public ApiResponseDTO<DeleteProfileResponseDTO> deleteProfile(
+            DeleteProfileRequestDTO request,
+            String authHeader) {
+
+        User user = getActiveAuthenticatedUser(authHeader);
+
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            throw new BusinessException("La contrasena es incorrecta", HttpStatus.FORBIDDEN);
+        }
+
+        notificationPublisherService.publishProfileDeleted(user);
+        blacklistBearerToken(authHeader);
+        userUnlinkingService.unlinkLocalUserRelations(user);
+        userRepository.delete(user);
+        userRepository.flush();
+
+        DeleteProfileResponseDTO response = DeleteProfileResponseDTO.builder()
+                .deleted(true)
+                .deletionType("PHYSICAL")
+                .operationId(UUID.randomUUID().toString())
+                .timestamp(LocalDateTime.now())
+                .build();
+
+        return ApiResponseDTO.ok("Perfil eliminado exitosamente", response);
+    }
+
+    /**
      * Obtiene el usuario autenticado y activo.
-     * 
-     * @param authHeader el encabezado de autenticación
+     *
+     * @param authHeader el encabezado de autenticacion
      * @return el usuario autenticado y activo
      */
     private User getActiveAuthenticatedUser(String authHeader) {
@@ -196,7 +260,7 @@ public class ProfileMutationService {
 
     /**
      * Mapea la entidad User a un DTO de respuesta de perfil de usuario.
-     * 
+     *
      * @param user la entidad User
      * @return el DTO de respuesta de perfil de usuario
      */
@@ -233,8 +297,8 @@ public class ProfileMutationService {
     }
 
     /**
-     * Resuelve el rol principal del usuario en función de sus roles asignados.
-     * 
+     * Resuelve el rol principal del usuario en funcion de sus roles asignados.
+     *
      * @param roles la lista de roles del usuario
      * @return el rol principal del usuario
      */
@@ -242,7 +306,7 @@ public class ProfileMutationService {
         if (roles.contains("ADMIN")) {
             return "ADMIN";
         }
-        if (roles.contains("ORGANIZER")){
+        if (roles.contains("ORGANIZER")) {
             return "ORGANIZER";
         }
         if (roles.contains("USER")) {
@@ -252,8 +316,53 @@ public class ProfileMutationService {
     }
 
     /**
+     * Detecta los campos modificados antes de guardar el perfil.
+     *
+     * @param user              usuario actual
+     * @param newName           nuevo nombre
+     * @param newLastName       nuevo apellido
+     * @param newEmail          nuevo correo
+     * @param newPhoneNumber    nuevo telefono
+     * @param newDocumentType   nuevo tipo de documento
+     * @param newDocumentNumber nuevo numero de documento
+     * @return lista de campos modificados
+     */
+    private List<String> detectChangedFields(
+            User user,
+            String newName,
+            String newLastName,
+            String newEmail,
+            String newPhoneNumber,
+            DocumentType newDocumentType,
+            String newDocumentNumber) {
+
+        List<String> changedFields = new ArrayList<>();
+
+        if (!Objects.equals(newName, user.getName())) {
+            changedFields.add("name");
+        }
+        if (!Objects.equals(newLastName, user.getLastName())) {
+            changedFields.add("lastName");
+        }
+        if (newEmail != null && !newEmail.equalsIgnoreCase(user.getEmail())) {
+            changedFields.add("email");
+        }
+        if (!Objects.equals(newPhoneNumber, user.getPhoneNumber())) {
+            changedFields.add("phoneNumber");
+        }
+        if (!Objects.equals(newDocumentType, user.getDocumentType())) {
+            changedFields.add("documentType");
+        }
+        if (!Objects.equals(newDocumentNumber, user.getDocumentNumber())) {
+            changedFields.add("documentNumber");
+        }
+
+        return changedFields;
+    }
+
+    /**
      * Analiza el tipo de documento y lo convierte en una instancia de DocumentType.
-     * 
+     *
      * @param documentType el tipo de documento como cadena
      * @return la instancia de DocumentType correspondiente
      */
@@ -272,10 +381,10 @@ public class ProfileMutationService {
 
     /**
      * Normaliza un valor requerido, eliminando espacios en blanco y devolviendo
-     * null si es vacío.
-     * 
+     * null si es vacio.
+     *
      * @param value el valor a normalizar
-     * @return el valor normalizado o null si es vacío
+     * @return el valor normalizado o null si es vacio
      */
     private String normalizeRequired(String value) {
         return value == null ? null : value.trim();
@@ -283,10 +392,10 @@ public class ProfileMutationService {
 
     /**
      * Normaliza un valor opcional, eliminando espacios en blanco y devolviendo null
-     * si es vacío.
-     * 
+     * si es vacio.
+     *
      * @param value el valor a normalizar
-     * @return el valor normalizado o null si es vacío
+     * @return el valor normalizado o null si es vacio
      */
     private String normalizeOptional(String value) {
         if (value == null || value.isBlank()) {
@@ -296,9 +405,9 @@ public class ProfileMutationService {
     }
 
     /**
-     * Añade un token de acceso a la lista negra.
+     * Anade un token de acceso a la lista negra.
      *
-     * @param authHeader el encabezado de autenticación
+     * @param authHeader el encabezado de autenticacion
      */
     private void blacklistBearerToken(String authHeader) {
         String token = extractBearerToken(authHeader);
@@ -320,10 +429,10 @@ public class ProfileMutationService {
     }
 
     /**
-     * Extrae el token de acceso del encabezado de autenticación.
-     * 
-     * @param authHeader el encabezado de autenticación
-     * @return el token de acceso o null si no es válido
+     * Extrae el token de acceso del encabezado de autenticacion.
+     *
+     * @param authHeader el encabezado de autenticacion
+     * @return el token de acceso o null si no es valido
      */
     private String extractBearerToken(String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
