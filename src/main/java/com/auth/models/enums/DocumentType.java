@@ -1,32 +1,29 @@
 package com.auth.models.enums;
 
 /**
- * Enumeración de los tipos de documento de identidad aceptados en el sistema.
+ * Enumeración de los tipos de documento de identidad aceptados en el sistema Qvenly.
  *
  * <p>Se persiste como cadena de texto ({@code @Enumerated(EnumType.STRING)})
  * en la columna {@code document_type} de la tabla {@code users}.</p>
  *
- * <ul>
- *   <li>{@link #CC}       — Cédula de Ciudadanía (Colombia)</li>
- *   <li>{@link #CE}       — Cédula de Extranjería (Colombia)</li>
- *   <li>{@link #PASSPORT} — Pasaporte internacional</li>
- *   <li>{@link #TI}       — Tarjeta de Identidad (Colombia, menores de edad)</li>
- * </ul>
+ * <p>Este campo es opcional para usuarios registrados mediante Google OAuth2
+ * y obligatorio para usuarios registrados con correo y contraseña.</p>
  *
- * @author Equipo Qvenly
- * @version Leidy Martinez
+ * @author Leidy Martinez
+ * @version 3.0
+ * @see com.auth.models.entities.User
  */
-
 public enum DocumentType {
-    /** Cédula de Ciudadanía colombiana. */
+
+    /** Cédula de Ciudadanía colombiana. Documento principal para ciudadanos mayores de edad. */
     CC,
 
-    /** Cédula de Extranjería colombiana. */
+    /** Cédula de Extranjería colombiana. Documento para residentes extranjeros en Colombia. */
     CE,
 
-    /** Pasaporte internacional. */
+    /** Pasaporte internacional. Válido para usuarios de cualquier nacionalidad. */
     PASSPORT,
 
-    /** Tarjeta de Identidad para menores de edad en Colombia. */
+    /** Tarjeta de Identidad colombiana. Documento para menores de edad en Colombia. */
     TI
 }
