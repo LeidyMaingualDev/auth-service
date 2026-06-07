@@ -10,13 +10,13 @@ import java.util.Optional;
  * Repositorio JPA para la entidad {@link User}.
  *
  * <p>Proporciona las operaciones CRUD heredadas de {@link JpaRepository}
- * más consultas derivadas específicas para la autenticación y el registro.</p>
+ * más consultas derivadas específicas para la autenticación, el registro
+ * y el flujo de Google OAuth2.</p>
  *
  * @author Leidy Martinez
- * @version 1.0
+ * @version 3.0
  * @see User
  */
-
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
 
@@ -54,10 +54,24 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     /**
      * Busca un usuario por su token de verificación de correo electrónico.
-     * Usado en el flujo de confirmación de cuenta.
+     *
+     * <p>Usado en el flujo de confirmación de cuenta. El token es un UUID de un solo
+     * uso generado durante el registro y eliminado tras la confirmación exitosa.</p>
      *
      * @param verificationToken token UUID enviado al correo del usuario
      * @return {@link Optional} con el usuario si el token existe, o vacío si no
      */
     Optional<User> findByVerificationToken(String verificationToken);
+
+    /**
+     * Busca un usuario por su identificador único de Google (campo {@code sub}).
+     *
+     * <p>Usado en el flujo de Google OAuth2 para identificar usuarios existentes
+     * de forma inequívoca sin depender del correo electrónico, que en casos
+     * excepcionales puede cambiar en Google.</p>
+     *
+     * @param googleId identificador único de Google ({@code sub} del perfil OAuth2)
+     * @return {@link Optional} con el usuario si existe, o vacío si es un usuario nuevo
+     */
+    Optional<User> findByGoogleId(String googleId);
 }

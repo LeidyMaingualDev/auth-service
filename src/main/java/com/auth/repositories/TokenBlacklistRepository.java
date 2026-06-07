@@ -15,7 +15,7 @@ import org.springframework.stereotype.Repository;
  * de la tabla {@code token_blacklist} en producción.</p>
  *
  * @author Leidy Martinez
- * @version 1.0
+ * @version 3.0
  * @see TokenBlacklist
  */
 @Repository

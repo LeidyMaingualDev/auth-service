@@ -11,7 +11,7 @@ import lombok.*;
  * es siempre la misma independientemente de si el correo existe.</p>
  *
  * @author Leidy Martinez
- * @version 1.0
+ * @version 3.0
  */
 
 @Data

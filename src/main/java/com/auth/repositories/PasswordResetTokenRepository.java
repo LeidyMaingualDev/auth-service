@@ -16,7 +16,7 @@ import java.util.Optional;
  * del mismo usuario antes de emitir uno nuevo.</p>
  *
  * @author Leidy Martinez
- * @version 1.0
+ * @version 3.0
  * @see PasswordResetToken
  */
 @Repository
