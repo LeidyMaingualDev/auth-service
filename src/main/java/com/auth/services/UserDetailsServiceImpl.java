@@ -15,27 +15,36 @@ import org.springframework.stereotype.Service;
  * este servicio sirve de puente entre el sistema de autenticación de Spring y la
  * entidad {@code User} persistida en base de datos.</p>
  *
- * <p>También es usado por {@code JwtAuthFilter} para recargar los detalles del usuario
- * desde la base de datos al validar un token JWT en cada petición.</p>
+ * <p>Es usado en dos contextos distintos:</p>
+ * <ul>
+ *   <li><b>Login tradicional</b> — {@code DaoAuthenticationProvider} lo llama para
+ *       cargar el usuario y verificar la contraseña durante la autenticación.</li>
+ *   <li><b>Validación JWT</b> — {@code JwtAuthFilter} lo llama para recargar los
+ *       detalles del usuario desde la base de datos al validar el token en cada petición.</li>
+ * </ul>
  *
- * @author Equipo Qvenly
- * @version 1.0
+ * @author Leidy Martinez
+ * @version 3.0
  * @see UserRepository
+ * @see com.auth.security.JwtAuthFilter
+ * @see com.auth.config.SecurityConfig
  */
 @Service
 @RequiredArgsConstructor
 public class UserDetailsServiceImpl implements UserDetailsService {
 
+    /** Repositorio para consultar usuarios en la base de datos. */
     private final UserRepository userRepository;
 
     /**
      * Carga un usuario de la base de datos usando su correo electrónico como identificador.
      *
-     * <p>En este microservicio el "username" de Spring Security es el correo electrónico,
-     * no un nombre de usuario tradicional.</p>
+     * <p>En Qvenly el "username" de Spring Security es el correo electrónico,
+     * no un nombre de usuario tradicional. La entidad {@code User} implementa
+     * {@link UserDetails} directamente, por lo que se devuelve sin transformación.</p>
      *
      * @param email correo electrónico del usuario a cargar
-     * @return objeto {@link UserDetails} con la información del usuario (la entidad {@code User})
+     * @return entidad {@code User} con toda la información de autenticación y autorización
      * @throws UsernameNotFoundException si no existe ningún usuario con ese correo electrónico
      */
     @Override

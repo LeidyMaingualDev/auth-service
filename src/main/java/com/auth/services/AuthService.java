@@ -2,6 +2,7 @@ package com.auth.services;
 
 import com.auth.models.dtos.*;
 import com.auth.models.entities.*;
+import com.auth.models.enums.AuthProvider;
 import com.auth.repositories.*;
 import com.auth.security.JwtService;
 import lombok.RequiredArgsConstructor;
@@ -19,28 +20,26 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Servicio central de autenticación y gestión del ciclo de vida de las sesiones de usuario.
+ * Servicio principal de autenticación del sistema Qvenly.
  *
- * <p>Implementa los seis casos de uso principales de autenticación:</p>
- * <ol>
- *   <li><strong>Registro</strong>: valida unicidad de email y documento, asigna rol {@code USER},
- *       genera y devuelve los tokens JWT.</li>
- *   <li><strong>Login</strong>: autentica con {@code AuthenticationManager}, registra el intento,
- *       envía alerta si se supera el umbral de fallos, devuelve tokens con el rol incluido.</li>
- *   <li><strong>Forgot password</strong>: genera un token UUID de un solo uso, lo persiste con TTL
- *       de 30 minutos, invalida tokens anteriores del usuario y envía el correo de recuperación.</li>
- *   <li><strong>Reset password</strong>: valida el token, verifica que la nueva contraseña
- *       sea distinta a la anterior, actualiza el hash en base de datos y envía confirmación.</li>
- *   <li><strong>Refresh token</strong>: verifica que el refresh token no esté en blacklist ni expirado,
- *       genera un nuevo par de tokens y los devuelve.</li>
- *   <li><strong>Logout</strong>: agrega el access token a la blacklist para invalidarlo de inmediato.</li>
- * </ol>
+ * <p>Centraliza toda la lógica de negocio relacionada con el ciclo de vida
+ * de la autenticación de usuarios:</p>
+ * <ul>
+ *   <li><b>Registro</b> — crea la cuenta, encripta la contraseña y envía correo de verificación.</li>
+ *   <li><b>Confirmación de email</b> — activa la cuenta mediante el token UUID enviado por correo.</li>
+ *   <li><b>Login</b> — autentica credenciales, gestiona intentos fallidos y genera tokens JWT.</li>
+ *   <li><b>Recuperación de contraseña</b> — genera token de reset y lo envía por correo.</li>
+ *   <li><b>Reset de contraseña</b> — valida el token, actualiza la contraseña y notifica al usuario.</li>
+ *   <li><b>Renovación de token</b> — valida el refresh token y emite un nuevo par de tokens.</li>
+ *   <li><b>Logout</b> — agrega los tokens a la blacklist para invalidarlos inmediatamente.</li>
+ * </ul>
  *
- * <p>Todas las operaciones que modifican la base de datos están anotadas con {@code @Transactional}
- * para garantizar la consistencia ante fallos parciales.</p>
+ * <p>Este servicio actúa como capa de negocio pura: no maneja HTTP directamente.
+ * Toda la comunicación con el cliente pasa por {@code AuthController}.</p>
  *
- * @author Equipo Qvenly
- * @version 1.0
+ * @author Leidy Martinez
+ * @version 3.0
+ * @see com.auth.controllers.AuthController
  * @see JwtService
  * @see EmailService
  */
@@ -60,24 +59,30 @@ public class AuthService {
     private final EmailService emailService;
     private final UserDetailsService userDetailsService;
 
-    /** Número máximo de intentos fallidos antes de enviar alerta de seguridad. Configurable en {@code app.max-login-attempts}. */
+    /** Número máximo de intentos fallidos antes de enviar alerta de seguridad. */
     @Value("${app.max-login-attempts}")
     private int maxLoginAttempts;
 
+    // ─────────────────────────────────────────────────────────────────────
+    // REGISTRO
+    // ─────────────────────────────────────────────────────────────────────
+
     /**
-     * Registra un nuevo usuario en el sistema.
+     * Registra un nuevo usuario en el sistema con autenticación local.
      *
-     * <p>Pasos del proceso:</p>
+     * <p>Flujo:</p>
      * <ol>
-     *   <li>Verifica que el correo y el número de documento no estén ya registrados.</li>
-     *   <li>Carga el rol {@code "USER"} desde la base de datos (debe existir previamente).</li>
-     *   <li>Construye la entidad {@code User} con la contraseña codificada con BCrypt.</li>
-     *   <li>Persiste el usuario y genera un par de tokens JWT (access + refresh).</li>
+     *   <li>Verifica que el email y el documento no estén duplicados.</li>
+     *   <li>Crea la entidad {@code User} con contraseña BCrypt y token de verificación UUID.</li>
+     *   <li>Persiste el usuario con {@code isActive = false} y {@code emailVerified = false}.</li>
+     *   <li>Envía el correo de verificación de forma asíncrona.</li>
      * </ol>
      *
-     * @param request DTO con los datos del nuevo usuario (validado previamente con {@code @Valid})
-     * @return {@link ApiResponseDTO} con los tokens JWT en caso de éxito,
-     *         o con el mensaje de error si el correo o documento ya existen
+     * <p>La cuenta permanece inactiva hasta que el usuario confirme su correo
+     * haciendo clic en el enlace enviado.</p>
+     *
+     * @param request DTO con los datos del nuevo usuario
+     * @return respuesta exitosa con mensaje informativo, o error si el email/documento ya existe
      */
     @Transactional
     public ApiResponseDTO<Void> register(RegisterRequestDTO request) {
@@ -105,39 +110,38 @@ public class AuthService {
         user.setActive(false);
         user.setEmailVerified(false);
         user.setVerificationToken(UUID.randomUUID().toString());
+        user.setAuthProvider(AuthProvider.LOCAL);
         user.setRoles(Set.of(userRole));
 
         userRepository.save(user);
+        emailService.sendVerificationEmail(user.getEmail(), user.getName(), user.getVerificationToken());
 
-        emailService.sendVerificationEmail(
-                user.getEmail(), user.getName(), user.getVerificationToken()
-        );
-
-        return ApiResponseDTO.ok(
-                "Registro exitoso. Revisa tu correo para confirmar tu cuenta."
-        );
+        return ApiResponseDTO.ok("Registro exitoso. Revisa tu correo para confirmar tu cuenta.");
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // LOGIN
+    // ─────────────────────────────────────────────────────────────────────
+
     /**
-     * Autentica un usuario verificando sus credenciales y registrando el intento.
+     * Autentica un usuario con correo electrónico y contraseña.
      *
-     * <p>Pasos del proceso:</p>
+     * <p>Flujo:</p>
      * <ol>
-     *   <li>Verifica que el usuario exista y que su cuenta esté activa.</li>
+     *   <li>Busca el usuario por email; rechaza si no existe.</li>
+     *   <li>Bloquea el acceso si la cuenta fue creada con Google OAuth2.</li>
+     *   <li>Verifica que el correo esté confirmado y la cuenta esté activa.</li>
      *   <li>Delega la verificación de credenciales a {@code AuthenticationManager}.</li>
-     *   <li>En caso de éxito: registra el intento como exitoso y genera los tokens.</li>
-     *   <li>En caso de fallo: registra el intento fallido; si supera {@code maxLoginAttempts}
-     *       en los últimos 15 minutos, envía una alerta de seguridad al correo del usuario.</li>
+     *   <li>Registra el intento exitoso en {@code login_attempts}.</li>
+     *   <li>Genera access token (15 min) y refresh token (1 o 7 días según {@code rememberMe}).</li>
      * </ol>
      *
-     * <p>El rol principal del usuario se incluye como claim {@code "role"} en el token
-     * para que el API Gateway pueda tomar decisiones de autorización sin consultar
-     * este microservicio en cada petición.</p>
+     * <p>Si las credenciales son incorrectas, registra el intento fallido y envía
+     * una alerta de seguridad al usuario si supera el umbral de {@code max-login-attempts}.</p>
      *
-     * @param request   DTO con email, contraseña y flag {@code rememberMe}
-     * @param ipAddress IP del cliente, usada para el registro del intento y la alerta de seguridad
-     * @return {@link ApiResponseDTO} con los tokens JWT en caso de éxito,
-     *         o con el mensaje de error y el conteo de intentos en caso de fallo
+     * @param request   DTO con email, contraseña y preferencia de "Recuérdame"
+     * @param ipAddress dirección IP del cliente para el registro de intentos
+     * @return DTO con los tokens JWT y datos básicos del usuario, o mensaje de error
      */
     @Transactional
     public ApiResponseDTO<AuthResponseDTO> login(LoginRequestDTO request, String ipAddress) {
@@ -148,10 +152,14 @@ public class AuthService {
             return ApiResponseDTO.error("Credenciales inválidas");
         }
 
-        if (!user.isEmailVerified()) {
+        if (user.getAuthProvider() == AuthProvider.GOOGLE) {
             return ApiResponseDTO.error(
-                    "Debes confirmar tu correo electrónico antes de iniciar sesión."
+                    "Esta cuenta fue creada con Google. Usa el botón 'Continuar con Google' para ingresar."
             );
+        }
+
+        if (!user.isEmailVerified()) {
+            return ApiResponseDTO.error("Debes confirmar tu correo electrónico antes de iniciar sesión.");
         }
 
         if (!user.isActive()) {
@@ -160,24 +168,18 @@ public class AuthService {
 
         try {
             authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(
-                            request.getEmail(), request.getPassword()
-                    )
+                    new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
             );
 
             registerLoginAttempt(request.getEmail(), ipAddress, true);
 
-            // Obtener rol principal
             String role = (user.getRoles() != null && !user.getRoles().isEmpty())
-                    ? user.getRoles().stream()
-                    .map(Role::getName)
-                    .findFirst()
-                    .orElse("USER")
+                    ? user.getRoles().stream().map(Role::getName).findFirst().orElse("USER")
                     : "USER";
 
-            // Incluir rol en el token
-            String token = jwtService.generateToken(user, Boolean.TRUE.equals(request.getRememberMe()), role);
-            String refreshToken = jwtService.generateRefreshToken(user);
+            boolean rememberMe  = Boolean.TRUE.equals(request.getRememberMe());
+            String token        = jwtService.generateToken(user, rememberMe, role);
+            String refreshToken = jwtService.generateRefreshToken(user, rememberMe);
 
             AuthResponseDTO authResponse = AuthResponseDTO.builder()
                     .token(token)
@@ -194,12 +196,9 @@ public class AuthService {
 
             registerLoginAttempt(request.getEmail(), ipAddress, false);
 
-            long failedAttempts = loginAttemptRepository
-                    .countByEmailAndSuccessAndAttemptedAtAfter(
-                            request.getEmail(),
-                            false,
-                            LocalDateTime.now().minusMinutes(15)
-                    );
+            long failedAttempts = loginAttemptRepository.countByEmailAndSuccessAndAttemptedAtAfter(
+                    request.getEmail(), false, LocalDateTime.now().minusMinutes(15)
+            );
 
             if (failedAttempts >= maxLoginAttempts) {
                 emailService.sendLoginAlertEmail(user.getEmail(), user.getName(), ipAddress);
@@ -207,26 +206,25 @@ public class AuthService {
                         user.getEmail(), failedAttempts, ipAddress);
             }
 
-            return ApiResponseDTO.error("Credenciales inválidas. Intento " +
-                    failedAttempts + "/" + maxLoginAttempts);
+            return ApiResponseDTO.error("Credenciales inválidas. Intento " + failedAttempts + "/" + maxLoginAttempts);
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // RECUPERACIÓN DE CONTRASEÑA
+    // ─────────────────────────────────────────────────────────────────────
 
     /**
      * Inicia el flujo de recuperación de contraseña enviando un enlace al correo del usuario.
      *
-     * <p>Por diseño de seguridad, siempre devuelve el mismo mensaje de éxito independientemente
-     * de si el correo existe o no, para evitar la enumeración de usuarios registrados.</p>
+     * <p>Por seguridad, la respuesta es siempre la misma independientemente de si el correo
+     * existe o no, para evitar la enumeración de usuarios registrados.</p>
      *
-     * <p>Si el usuario existe y está activo:</p>
-     * <ol>
-     *   <li>Se invalidan los tokens de recuperación anteriores del usuario.</li>
-     *   <li>Se genera un nuevo token UUID con TTL de 30 minutos.</li>
-     *   <li>Se persiste el token y se envía el correo de forma asíncrona.</li>
-     * </ol>
+     * <p>Si el usuario existe y está activo, invalida tokens previos de recuperación
+     * antes de generar uno nuevo con TTL de 30 minutos.</p>
      *
-     * @param request DTO con el correo electrónico del usuario
-     * @return {@link ApiResponseDTO} siempre exitoso con mensaje genérico
+     * @param request DTO con el correo al que enviar el enlace de recuperación
+     * @return respuesta exitosa con mensaje genérico (mismo para email existente o no)
      */
     @Transactional
     public ApiResponseDTO<Void> forgotPassword(ForgotPasswordRequestDTO request) {
@@ -248,28 +246,29 @@ public class AuthService {
             emailService.sendPasswordResetEmail(user.getEmail(), user.getName(), token);
         }
 
-        return ApiResponseDTO.ok(
-                "Si el correo está registrado, recibirás un enlace en los próximos minutos"
-        );
+        return ApiResponseDTO.ok("Si el correo está registrado, recibirás un enlace en los próximos minutos");
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // RESET DE CONTRASEÑA
+    // ─────────────────────────────────────────────────────────────────────
+
     /**
-     * Restablece la contraseña del usuario usando el token de recuperación de un solo uso.
+     * Restablece la contraseña del usuario usando el token de recuperación.
      *
-     * <p>Validaciones realizadas:</p>
-     * <ul>
-     *   <li>Las contraseñas nueva y de confirmación deben coincidir.</li>
-     *   <li>El token debe existir en base de datos y no haber sido usado.</li>
-     *   <li>El token no debe haber expirado (TTL de 30 minutos).</li>
-     *   <li>La nueva contraseña debe ser diferente a la contraseña actual.</li>
-     * </ul>
+     * <p>Validaciones realizadas en orden:</p>
+     * <ol>
+     *   <li>Las contraseñas nueva y de confirmación coinciden.</li>
+     *   <li>El token existe en la base de datos y no ha sido usado.</li>
+     *   <li>El token no ha expirado (TTL de 30 minutos desde su creación).</li>
+     *   <li>La nueva contraseña es diferente a la anterior.</li>
+     * </ol>
      *
-     * <p>Tras el restablecimiento exitoso, el token se marca como usado y se envía
+     * <p>Tras el restablecimiento exitoso, marca el token como usado y envía
      * un correo de confirmación al usuario.</p>
      *
-     * @param request DTO con el token UUID, la nueva contraseña y su confirmación
-     * @return {@link ApiResponseDTO} exitoso si el restablecimiento fue correcto,
-     *         o con el mensaje de error específico si alguna validación falla
+     * @param request DTO con el token de recuperación y la nueva contraseña confirmada
+     * @return respuesta exitosa o mensaje de error descriptivo según la validación fallida
      */
     @Transactional
     public ApiResponseDTO<Void> resetPassword(ResetPasswordRequestDTO request) {
@@ -279,25 +278,20 @@ public class AuthService {
         }
 
         PasswordResetToken resetToken = passwordResetTokenRepository
-                .findByToken(request.getToken())
-                .orElse(null);
+                .findByToken(request.getToken()).orElse(null);
 
         if (resetToken == null || resetToken.isUsed()) {
             return ApiResponseDTO.error("El enlace de recuperación no es válido");
         }
 
         if (resetToken.isExpired()) {
-            return ApiResponseDTO.error(
-                    "El enlace ha expirado. Por favor, solicita uno nuevo"
-            );
+            return ApiResponseDTO.error("El enlace ha expirado. Por favor, solicita uno nuevo");
         }
 
         User user = resetToken.getUser();
 
         if (passwordEncoder.matches(request.getNewPassword(), user.getPassword())) {
-            return ApiResponseDTO.error(
-                    "La nueva contraseña no puede ser igual a la anterior"
-            );
+            return ApiResponseDTO.error("La nueva contraseña no puede ser igual a la anterior");
         }
 
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
@@ -311,16 +305,27 @@ public class AuthService {
         return ApiResponseDTO.ok("Contraseña restablecida exitosamente");
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // RENOVACIÓN DE TOKEN
+    // ─────────────────────────────────────────────────────────────────────
+
     /**
      * Renueva el access token usando un refresh token válido.
      *
-     * <p>Verifica que el refresh token no esté en la blacklist (revocado) y no haya expirado.
-     * Si es válido, genera un nuevo par de tokens (access + refresh) con el rol actualizado
-     * del usuario desde la base de datos.</p>
+     * <p>Llamado desde {@code POST /auth/refresh-from-cookie} cuando el interceptor
+     * Angular detecta un {@code 401 Unauthorized} en el frontend.</p>
      *
-     * @param request DTO con el refresh token a renovar
-     * @return {@link ApiResponseDTO} con el nuevo par de tokens en caso de éxito,
-     *         o con el mensaje de error si el token es inválido o ha expirado
+     * <p>Validaciones:</p>
+     * <ol>
+     *   <li>El refresh token no está en la blacklist (no fue revocado por logout).</li>
+     *   <li>El refresh token no ha expirado y la firma es válida.</li>
+     * </ol>
+     *
+     * <p>Genera un nuevo par de tokens. El nuevo refresh token siempre dura 7 días
+     * ya que en este punto no se conoce la preferencia original de "Recuérdame".</p>
+     *
+     * @param request DTO con el refresh token a validar
+     * @return nuevo par de tokens JWT, o error si el refresh token es inválido o expirado
      */
     public ApiResponseDTO<AuthResponseDTO> refreshToken(RefreshTokenRequestDTO request) {
 
@@ -331,32 +336,30 @@ public class AuthService {
         }
 
         try {
-            String email = jwtService.extractUsername(refreshToken);
+            String email    = jwtService.extractUsername(refreshToken);
             var userDetails = userDetailsService.loadUserByUsername(email);
 
             if (!jwtService.isTokenValid(refreshToken, userDetails)) {
                 return ApiResponseDTO.error("El token ha expirado o no es válido");
             }
 
-            // Obtener rol del usuario para incluirlo en el nuevo token
             User user = userRepository.findByEmail(email)
                     .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
             String role = (user.getRoles() != null && !user.getRoles().isEmpty())
-                    ? user.getRoles().stream()
-                    .map(Role::getName)
-                    .findFirst()
-                    .orElse("USER")
+                    ? user.getRoles().stream().map(Role::getName).findFirst().orElse("USER")
                     : "USER";
 
-            String newToken = jwtService.generateToken(userDetails, role);
+            String newToken        = jwtService.generateToken(userDetails, role);
             String newRefreshToken = jwtService.generateRefreshToken(userDetails);
 
             AuthResponseDTO authResponse = AuthResponseDTO.builder()
                     .token(newToken)
                     .refreshToken(newRefreshToken)
                     .email(email)
+                    .name(user.getName())
                     .role(role)
+                    .userId(user.getId())
                     .build();
 
             return ApiResponseDTO.ok("Token renovado exitosamente", authResponse);
@@ -366,17 +369,20 @@ public class AuthService {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // LOGOUT
+    // ─────────────────────────────────────────────────────────────────────
+
     /**
-     * Cierra la sesión del usuario invalidando el access token y el refresh token.
+     * Cierra la sesión del usuario invalidando sus tokens JWT activos.
      *
-     * <p>Ambos tokens se agregan a la tabla {@code token_blacklist}. Esto garantiza
-     * que aunque el refresh token no haya expirado, no pueda usarse para obtener
-     * un nuevo access token tras el logout.</p>
+     * <p>Agrega tanto el access token como el refresh token a la tabla
+     * {@code token_blacklist}. Cualquier petición futura con esos tokens
+     * será rechazada por {@code JwtAuthFilter} aunque los tokens no hayan expirado.</p>
      *
-     * @param authHeader   valor completo de la cabecera {@code Authorization} (con prefijo {@code "Bearer "})
-     * @param refreshToken refresh token a invalidar (opcional, puede ser {@code null})
-     * @return {@link ApiResponseDTO} confirmando el cierre de sesión,
-     *         o con mensaje de error si no se proporcionó el access token
+     * @param authHeader   cabecera {@code Authorization: Bearer <token>} con el access token
+     * @param refreshToken cookie {@code refresh_token} a invalidar junto al access token
+     * @return respuesta exitosa o error si no se proporcionó cabecera de autorización
      */
     @Transactional
     public ApiResponseDTO<Void> logout(String authHeader, String refreshToken) {
@@ -386,47 +392,28 @@ public class AuthService {
         }
 
         String token = authHeader.substring(7);
-
-        tokenBlacklistRepository.save(
-                TokenBlacklist.builder().token(token).build()
-        );
+        tokenBlacklistRepository.save(TokenBlacklist.builder().token(token).build());
 
         if (refreshToken != null && !refreshToken.isBlank()) {
-            tokenBlacklistRepository.save(
-                    TokenBlacklist.builder().token(refreshToken).build()
-            );
+            tokenBlacklistRepository.save(TokenBlacklist.builder().token(refreshToken).build());
         }
 
         return ApiResponseDTO.ok("Sesión cerrada exitosamente");
     }
 
-    /**
-     * Registra un intento de inicio de sesión en la base de datos para auditoría.
-     *
-     * <p>Se llama tanto en intentos exitosos como fallidos para mantener un historial
-     * completo de la actividad de autenticación.</p>
-     *
-     * @param email     correo electrónico con el que se intentó iniciar sesión
-     * @param ipAddress dirección IP del cliente
-     * @param success   {@code true} si el intento fue exitoso; {@code false} si falló
-     */
-    private void registerLoginAttempt(String email, String ipAddress, boolean success) {
-        LoginAttempt attempt = LoginAttempt.builder()
-                .email(email)
-                .ipAddress(ipAddress)
-                .success(success)
-                .build();
-        loginAttemptRepository.save(attempt);
-    }
+    // ─────────────────────────────────────────────────────────────────────
+    // CONFIRMACIÓN DE EMAIL
+    // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Confirma el correo electrónico del usuario usando el token de verificación.
+     * Confirma el correo electrónico del usuario y activa su cuenta.
      *
-     * <p>Activa la cuenta ({@code isActive = true}) y elimina el token de verificación
-     * una vez usado. Si el token no existe o ya fue usado devuelve error.</p>
+     * <p>Busca al usuario por el token UUID enviado durante el registro.
+     * Si es válido y no ha sido usado, establece {@code emailVerified = true},
+     * {@code isActive = true} y elimina el token para que no pueda reutilizarse.</p>
      *
-     * @param token token UUID enviado al correo del usuario durante el registro
-     * @return {@link ApiResponseDTO} exitoso si la confirmación fue correcta
+     * @param token token UUID de verificación recibido como query param
+     * @return respuesta exitosa indicando que ya puede iniciar sesión, o error si el token es inválido
      */
     @Transactional
     public ApiResponseDTO<Void> confirmEmail(String token) {
@@ -447,5 +434,28 @@ public class AuthService {
         userRepository.save(user);
 
         return ApiResponseDTO.ok("Correo confirmado exitosamente. Ya puedes iniciar sesión.");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // PRIVADOS
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Registra un intento de inicio de sesión en la tabla {@code login_attempts}.
+     *
+     * <p>Se llama tanto para intentos exitosos como fallidos, permitiendo
+     * detectar patrones de fuerza bruta y generar alertas de seguridad.</p>
+     *
+     * @param email     correo electrónico del usuario que intentó iniciar sesión
+     * @param ipAddress dirección IP desde la que se realizó el intento
+     * @param success   {@code true} si el intento fue exitoso; {@code false} si falló
+     */
+    private void registerLoginAttempt(String email, String ipAddress, boolean success) {
+        LoginAttempt attempt = LoginAttempt.builder()
+                .email(email)
+                .ipAddress(ipAddress)
+                .success(success)
+                .build();
+        loginAttemptRepository.save(attempt);
     }
 }
