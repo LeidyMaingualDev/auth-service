@@ -1,5 +1,6 @@
 package com.auth.models.entities;
 
+import com.auth.models.enums.AuthProvider;
 import com.auth.models.enums.DocumentType;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -11,29 +12,32 @@ import org.springframework.security.core.userdetails.UserDetails;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Entidad JPA que representa un usuario registrado en el sistema.
+ * Entidad que representa un usuario registrado en el sistema Qvenly.
  *
- * <p>Implementa {@link UserDetails} de Spring Security, lo que permite que esta
- * entidad sea usada directamente por el framework para la autenticación y
- * autorización, sin capas intermedias de conversión.</p>
+ * <p>Implementa {@link UserDetails} para integrarse con Spring Security,
+ * permitiendo que el framework gestione la autenticación y autorización
+ * directamente a partir de esta entidad.</p>
  *
- * <p>Los roles se cargan con {@code FetchType.EAGER} para que estén disponibles
- * en el momento en que Spring Security construye el contexto de seguridad,
- * evitando {@code LazyInitializationException} fuera de una transacción activa.</p>
+ * <p>Soporta dos proveedores de autenticación:</p>
+ * <ul>
+ *   <li><b>LOCAL</b> — registro con correo electrónico y contraseña.</li>
+ *   <li><b>GOOGLE</b> — registro e inicio de sesión mediante OAuth2 con Google.
+ *       En este caso la contraseña se almacena como {@code null} y el acceso
+ *       se controla exclusivamente a través del proveedor externo.</li>
+ * </ul>
  *
- * <p>Tabla en base de datos: {@code users}</p>
+ * <p>Mapa de la tabla {@code users} en la base de datos {@code auth_and_user}.</p>
  *
- * @author Equipo Qvenly
- * @version Leidy Martinez
+ * @author Leidy Martinez
+ * @version 3.0
  * @see Role
- * @see UserDetails
+ * @see AuthProvider
+ * @see DocumentType
  */
-
 @Entity
 @Table(name = "users")
 @Data
@@ -41,76 +45,146 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 public class User implements UserDetails {
 
-    /** Identificador único generado automáticamente por la base de datos. */
+    /**
+     * Identificador único del usuario generado automáticamente por la base de datos.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Nombre de pila del usuario. No puede ser nulo. */
+    /**
+     * Nombre(s) del usuario.
+     * No puede ser nulo. Para usuarios de Google se obtiene del campo {@code given_name}.
+     */
     @Column(name = "name", nullable = false)
     private String name;
 
-    /** Apellido del usuario. No puede ser nulo. */
+    /**
+     * Apellido(s) del usuario.
+     * No puede ser nulo. Para usuarios de Google se obtiene del campo {@code family_name}.
+     * Puede ser cadena vacía si Google no provee el apellido.
+     */
     @Column(name = "last_name", nullable = false)
     private String lastName;
 
-    /** Correo electrónico. Único en el sistema y usado como nombre de usuario para login. */
+    /**
+     * Correo electrónico del usuario. Actúa como identificador único de inicio de sesión.
+     * No puede ser nulo ni repetirse entre usuarios.
+     */
     @Column(name = "email", nullable = false, unique = true)
     private String email;
 
-    /** Contraseña almacenada con hash BCrypt. Nunca se devuelve en respuestas HTTP. */
-    @Column(name = "password", nullable = false)
+    /**
+     * Contraseña del usuario almacenada con hash BCrypt.
+     * Es {@code null} para usuarios registrados con Google OAuth2,
+     * ya que su autenticación no requiere contraseña propia del sistema.
+     */
+    @Column(name = "password", nullable = true)
     private String password;
 
-    /** Número de documento de identidad. Opcional y único si se proporciona. */
+    /**
+     * Número de documento de identidad del usuario (cédula, pasaporte, etc.).
+     * Es único en el sistema. Puede ser {@code null} para usuarios de Google
+     * que no hayan completado su perfil.
+     */
     @Column(name = "document_number", unique = true)
     private String documentNumber;
 
     /**
-     * Tipo de documento de identidad. Se persiste como cadena (ej. {@code "CC"}).
-     *
-     * @see DocumentType
+     * Tipo de documento de identidad del usuario.
+     * Los valores posibles están definidos en {@link DocumentType}:
+     * {@code CC}, {@code CE}, {@code PASSPORT}, {@code TI}.
      */
-    @Enumerated(EnumType.STRING)  // mapea el ENUM de la BD
+    @Enumerated(EnumType.STRING)
     @Column(name = "document_type")
     private DocumentType documentType;
 
-    /** Número de teléfono del usuario. Opcional. */
+    /**
+     * Número de teléfono de contacto del usuario.
+     * Formato recomendado: {@code +573001234567}.
+     */
     @Column(name = "phone_number")
     private String phoneNumber;
 
     /**
-     * Indica si la cuenta está activa. Las cuentas inactivas no pueden iniciar sesión.
-     * Valor por defecto: {@code true}.
+     * URL de la foto de perfil del usuario.
+     * Para usuarios de Google, se obtiene del campo {@code picture} del perfil OAuth2
+     * y se actualiza automáticamente si cambia en Google.
+     * Para usuarios locales, puede ser {@code null}.
      */
-    @Column(name = "is_active", nullable = false)
-    private boolean isActive = true;
-
-    /** Fecha y hora de creación del registro. Se asigna automáticamente en {@link #onCreate()}. */
-    @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
+    @Column(name = "profile_picture", length = 500)
+    private String profilePicture;
 
     /**
-     * Indica si el correo electrónico del usuario ha sido verificado.
-     * Hasta que sea {@code true} el usuario no puede iniciar sesión.
+     * Indica si la cuenta del usuario está activa y puede iniciar sesión.
+     * Se establece en {@code true} tras confirmar el correo electrónico
+     * o al registrarse mediante Google OAuth2.
+     */
+    @Column(name = "is_active", nullable = false)
+    private boolean isActive = false;
+
+    /**
+     * Indica si el usuario ha verificado su correo electrónico.
+     * Para usuarios locales, se establece en {@code true} al hacer clic
+     * en el enlace de confirmación enviado por correo.
+     * Para usuarios de Google, se establece según el campo {@code email_verified}
+     * del perfil OAuth2.
      */
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = false;
 
     /**
-     * Token UUID usado para verificar el correo electrónico.
-     * Se elimina una vez confirmado.
+     * Token UUID de un solo uso para confirmar el correo electrónico.
+     * Se genera durante el registro local y se elimina tras la confirmación exitosa.
+     * Es {@code null} para usuarios de Google y para cuentas ya verificadas.
      */
     @Column(name = "verification_token", unique = true)
     private String verificationToken;
 
     /**
-     * Conjunto de roles asignados al usuario. Se carga de forma eagerly para
-     * que Spring Security pueda leer las autoridades en cualquier punto del ciclo de vida.
-     *
-     * <p>Tabla de unión: {@code user_roles} con columnas {@code user_id} y {@code role_id}.</p>
+     * Proveedor de autenticación con el que el usuario creó su cuenta.
+     * <ul>
+     *   <li>{@link AuthProvider#LOCAL} — registro con correo y contraseña.</li>
+     *   <li>{@link AuthProvider#GOOGLE} — registro mediante Google OAuth2.</li>
+     * </ul>
+     * Una vez establecido, no se modifica. Impide que un usuario local
+     * inicie sesión con Google y viceversa (política de no mezclar proveedores).
      */
-    @ManyToMany(fetch = FetchType.EAGER)  // EAGER para cargar roles
+    @Enumerated(EnumType.STRING)
+    @Column(name = "auth_provider", nullable = false)
+    private AuthProvider authProvider = AuthProvider.LOCAL;
+
+    /**
+     * Identificador único de Google del usuario (campo {@code sub} del perfil OAuth2).
+     * Permite identificar al usuario de Google de forma inequívoca sin depender
+     * del correo, que puede cambiar en casos excepcionales.
+     * Es {@code null} para usuarios locales.
+     */
+    @Column(name = "google_id", unique = true)
+    private String googleId;
+
+    /**
+     * Fecha y hora de creación del registro del usuario.
+     * Se establece automáticamente en {@link #onCreate()} y no puede modificarse.
+     */
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
+
+    /**
+     * Fecha y hora de la última modificación del registro del usuario.
+     * Se actualiza automáticamente en {@link #onUpdate()} cada vez que
+     * se persiste un cambio en la entidad.
+     */
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    /**
+     * Conjunto de roles asignados al usuario.
+     * Se carga de forma inmediata ({@code FetchType.EAGER}) para que Spring Security
+     * pueda construir las autoridades sin necesidad de una sesión de base de datos abierta.
+     * Los roles se gestionan a través de la tabla intermedia {@code user_roles}.
+     */
+    @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
             name = "user_roles",
             joinColumns        = @JoinColumn(name = "user_id"),
@@ -118,83 +192,98 @@ public class User implements UserDetails {
     )
     private Set<Role> roles;
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Implementación de UserDetails
+    // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Convierte los roles del usuario en autoridades de Spring Security.
+     * Devuelve las autoridades (roles) del usuario en formato Spring Security.
+     * Cada rol se prefija con {@code ROLE_} según la convención de Spring Security
+     * (ej. {@code ROLE_USER}, {@code ROLE_ADMIN}).
      *
-     * <p>Cada rol se prefija con {@code ROLE_} siguiendo la convención de Spring Security
-     * (ej. el rol {@code "ADMIN"} se convierte en la autoridad {@code "ROLE_ADMIN"}).</p>
-     *
-     * @return colección de {@link GrantedAuthority} basada en los roles del usuario
+     * @return colección de {@link GrantedAuthority} derivada de los roles del usuario
      */
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return roles.stream()                  // ← lee los roles reales de la BD
+        return roles.stream()
                 .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName()))
                 .collect(Collectors.toList());
     }
 
     /**
-     * Devuelve el correo electrónico como nombre de usuario para Spring Security.
+     * Devuelve el identificador de inicio de sesión del usuario.
+     * En Qvenly, el correo electrónico actúa como nombre de usuario.
      *
      * @return correo electrónico del usuario
      */
     @Override
-    public String getUsername() {
-        return this.email;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public String getPassword() {
-        return this.password;
-    }
+    public String getUsername() { return this.email; }
 
     /**
-     * La caducidad de cuenta no está implementada. Siempre devuelve {@code true}.
+     * Devuelve la contraseña del usuario con hash BCrypt.
+     * Puede ser {@code null} para usuarios de Google OAuth2.
      *
-     * @return {@code true} — la cuenta nunca expira
+     * @return contraseña hasheada o {@code null} si el usuario usa OAuth2
      */
     @Override
-    public boolean isAccountNonExpired() {
-        return true;
-    }
+    public String getPassword() { return this.password; }
 
     /**
-     * El bloqueo de cuenta no está implementado. Siempre devuelve {@code true}.
+     * Indica si la cuenta del usuario no ha expirado.
+     * Qvenly no implementa expiración de cuentas por tiempo.
      *
-     * @return {@code true} — la cuenta nunca se bloquea automáticamente
+     * @return siempre {@code true}
      */
     @Override
-    public boolean isAccountNonLocked() {
-        return true;
-    }
+    public boolean isAccountNonExpired() { return true; }
 
     /**
-     * La caducidad de credenciales no está implementada. Siempre devuelve {@code true}.
+     * Indica si la cuenta del usuario no está bloqueada.
+     * Qvenly no implementa bloqueo de cuentas actualmente.
      *
-     * @return {@code true} — las credenciales nunca expiran
+     * @return siempre {@code true}
      */
     @Override
-    public boolean isCredentialsNonExpired() {
-        return true;
-    }
+    public boolean isAccountNonLocked() { return true; }
 
     /**
-     * Devuelve si la cuenta está habilitada, basándose en el campo {@code isActive}.
+     * Indica si las credenciales del usuario no han expirado.
+     * Qvenly no implementa expiración de credenciales.
      *
-     * @return {@code true} si la cuenta está activa; {@code false} si fue desactivada
+     * @return siempre {@code true}
      */
     @Override
-    public boolean isEnabled() {
-        return this.isActive;
-    }
+    public boolean isCredentialsNonExpired() { return true; }
 
     /**
-     * Hook de JPA que asigna la fecha de creación antes del primer {@code INSERT}.
+     * Indica si la cuenta del usuario está habilitada para iniciar sesión.
+     * Refleja el valor del campo {@link #isActive}.
+     *
+     * @return {@code true} si la cuenta está activa; {@code false} en caso contrario
+     */
+    @Override
+    public boolean isEnabled() { return this.isActive; }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Callbacks de ciclo de vida JPA
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Inicializa las fechas de auditoría antes de persistir el usuario por primera vez.
+     * Establece {@link #createdAt} y {@link #updatedAt} con la fecha y hora actuales.
      */
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * Actualiza la fecha de última modificación antes de cada actualización en base de datos.
+     * Se ejecuta automáticamente por JPA cuando se llama a {@code save()} en el repositorio.
+     */
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
     }
 }

@@ -4,7 +4,7 @@ server:
     session:
       cookie:
         same-site: lax
-        secure: false
+        secure: false  # cambiar a true en producción con HTTPS
 
 spring:
   application:
@@ -46,7 +46,7 @@ spring:
     host: smtp.gmail.com
     port: 587
     username: YOUR_EMAIL@gmail.com
-    password: YOUR_APP_PASSWORD
+    password: YOUR_APP_PASSWORD  # contraseña de aplicación de Google, no la del correo
     properties:
       mail:
         smtp:
@@ -64,11 +64,14 @@ spring:
         health-check-interval: 10s
 
 jwt:
-  secret: YOUR_JWT_SECRET_BASE64
-  expiration: 86400000
-  refresh-expiration: 604800000
+  secret: YOUR_JWT_SECRET_BASE64          # clave Base64 de mínimo 256 bits
+  expiration: 900000                       # 15 minutos — access token (siempre fijo)
+  refresh-expiration: 604800000            # 7 días — refresh token con "Recuérdame" activo
 
 management:
+  health:
+    mail:
+      enabled: false                       # evita que el health check falle si el SMTP no responde
   endpoints:
     web:
       exposure:
@@ -76,7 +79,7 @@ management:
 
 app:
   frontend-url: http://localhost:4200
-  max-login-attempts: 5
+  max-login-attempts: 5                    # intentos fallidos antes de enviar alerta de seguridad
 
 logging:
   level:

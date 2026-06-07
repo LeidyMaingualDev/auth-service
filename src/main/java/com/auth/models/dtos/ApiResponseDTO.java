@@ -28,7 +28,7 @@ import java.time.LocalDateTime;
  *
  * @param <T> tipo de datos contenidos en el campo {@code data}
  * @author Leidy Martinez
- * @version 1.0
+ * @version 3.0
  */
 
 @Data

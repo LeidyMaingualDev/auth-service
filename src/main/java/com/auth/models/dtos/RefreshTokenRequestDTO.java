@@ -10,7 +10,7 @@ import lombok.*;
  * enviar el refresh token obtenido durante el login o el último refresh exitoso.</p>
  *
  * @author Leidy Martinez
- * @version 1.0
+ * @version 3.0
  */
 
 @Data

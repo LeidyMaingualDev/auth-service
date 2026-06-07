@@ -13,7 +13,7 @@ import java.util.Optional;
  * el rol {@code "USER"} por defecto al nuevo usuario.</p>
  *
  * @author Leidy Martinez
- * @version 1.0
+ * @version 3.0
  * @see Role
  */
 

@@ -8,7 +8,6 @@ import com.auth.models.entities.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
-
 import java.security.Key;
 import java.util.*;
 import java.util.function.Function;
@@ -16,42 +15,64 @@ import java.util.function.Function;
 /**
  * Servicio responsable de la generación, validación y extracción de claims de tokens JWT.
  *
- * <p>Centraliza toda la lógica relacionada con JWT para que tanto el microservicio
- * de autenticación como el API Gateway puedan reutilizar la misma lógica
- * (el Gateway tiene su propia copia de este servicio).</p>
+ * <p>Centraliza toda la lógica relacionada con JWT para que el microservicio
+ * de autenticación pueda reutilizarla de forma coherente. El API Gateway
+ * tiene su propia copia de este servicio para validar tokens sin depender
+ * del microservicio de autenticación.</p>
  *
  * <p>Configuración requerida en {@code application.yaml}:</p>
  * <ul>
- *   <li>{@code jwt.secret} — clave secreta codificada en Base64 (mínimo 256 bits)</li>
- *   <li>{@code jwt.expiration} — duración del access token en milisegundos (ej. 86400000 = 1 día)</li>
- *   <li>{@code jwt.refresh-expiration} — duración del refresh token en ms (ej. 604800000 = 7 días)</li>
+ *   <li>{@code jwt.secret} — clave secreta codificada en Base64 (mínimo 256 bits).</li>
+ *   <li>{@code jwt.expiration} — duración del access token en ms. Valor: {@code 900000} (15 min).</li>
+ *   <li>{@code jwt.refresh-expiration} — duración máxima del refresh token en ms.
+ *       Valor: {@code 604800000} (7 días).</li>
+ * </ul>
+ *
+ * <p>Lógica de duración según "Recuérdame":</p>
+ * <ul>
+ *   <li>Access token — siempre 15 minutos, independiente del valor de {@code rememberMe}.</li>
+ *   <li>Refresh token — 1 día si {@code rememberMe = false}; 7 días si {@code rememberMe = true}.</li>
  * </ul>
  *
  * <p>Todos los tokens son firmados con el algoritmo {@code HS256} usando la clave
  * HMAC derivada del secreto configurado.</p>
  *
  * @author Leidy Martinez
- * @version 1.0
+ * @version 3.0
+ * @see JwtAuthFilter
  */
 @Service
 public class JwtService {
 
+    /** Clave secreta codificada en Base64 para firmar y verificar tokens JWT. */
     @Value("${jwt.secret}")
     private String secretKey;
 
+    /** Duración del access token en milisegundos. Valor configurado: 900000 (15 minutos). */
     @Value("${jwt.expiration}")
     private long expirationTime;
 
+    /** Duración máxima del refresh token en milisegundos. Valor configurado: 604800000 (7 días). */
     @Value("${jwt.refresh-expiration}")
     private long refreshExpirationTime;
 
     /**
-     * Genera un access token JWT sin claims adicionales para el usuario dado.
+     * Duración del refresh token cuando el usuario NO marcó "Recuérdame".
+     * La sesión expira al día siguiente aunque el navegador siga abierto.
+     */
+    private static final long REFRESH_NO_REMEMBER_MS = 86400000L;
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GENERACIÓN DE TOKENS
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Genera un access token JWT sin claims adicionales.
      *
      * <p>Mantiene compatibilidad con código que no necesita incluir el rol en el token.</p>
      *
      * @param userDetails datos del usuario autenticado
-     * @return token JWT firmado con duración estándar ({@code jwt.expiration})
+     * @return token JWT firmado con duración de 15 minutos
      */
     public String generateToken(UserDetails userDetails) {
         return buildToken(new HashMap<>(), userDetails, expirationTime);
@@ -61,11 +82,11 @@ public class JwtService {
      * Genera un access token JWT con el rol del usuario incluido como claim.
      *
      * <p>El API Gateway usa el claim {@code role} para tomar decisiones de autorización
-     * sin necesidad de consultar el microservicio de autenticación.</p>
+     * sin necesidad de consultar el microservicio de autenticación en cada petición.</p>
      *
      * @param userDetails datos del usuario autenticado
      * @param role        nombre del rol principal del usuario (ej. {@code "USER"}, {@code "ADMIN"})
-     * @return token JWT firmado con el claim {@code role} y duración estándar
+     * @return token JWT firmado con los claims {@code role} y {@code userId}, duración 15 minutos
      */
     public String generateToken(UserDetails userDetails, String role) {
         Map<String, Object> claims = new HashMap<>();
@@ -75,33 +96,32 @@ public class JwtService {
     }
 
     /**
-     * Genera un access token JWT con rol y duración variable según {@code rememberMe}.
+     * Genera un access token JWT con rol y parámetro {@code rememberMe}.
      *
-     * <p>Si {@code rememberMe} es {@code true}, el token tendrá la duración del
-     * refresh token ({@code jwt.refresh-expiration}) en lugar de la estándar,
-     * manteniendo la sesión activa por más tiempo.</p>
+     * <p>El access token <b>siempre dura 15 minutos</b> independientemente del valor
+     * de {@code rememberMe}. El parámetro solo afecta la duración del refresh token
+     * (ver {@link #generateRefreshToken(UserDetails, boolean)}).</p>
      *
      * @param userDetails datos del usuario autenticado
-     * @param rememberMe  {@code true} para extender la duración del token
+     * @param rememberMe  no afecta el access token; incluido por compatibilidad con la firma
      * @param role        nombre del rol principal del usuario
-     * @return token JWT firmado con la duración apropiada según {@code rememberMe}
+     * @return token JWT firmado con los claims {@code role} y {@code userId}, duración 15 minutos
      */
     public String generateToken(UserDetails userDetails, boolean rememberMe, String role) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", role);
         claims.put("userId", ((User) userDetails).getId());
-        long duration = rememberMe ? refreshExpirationTime : expirationTime;
-        return buildToken(claims, userDetails, duration);
+        return buildToken(claims, userDetails, expirationTime);
     }
 
     /**
-     * Genera un refresh token JWT de larga duración.
+     * Genera un refresh token JWT con duración fija de 7 días.
      *
-     * <p>Incluye el claim {@code type: "refresh"} para distinguirlo de los access tokens.
-     * Solo debe usarse en el endpoint {@code POST /auth/refresh-token}.</p>
+     * <p>Usado en contextos donde no se conoce el valor de {@code rememberMe},
+     * como el flujo de Google OAuth2 o la renovación automática del interceptor.</p>
      *
      * @param userDetails datos del usuario autenticado
-     * @return refresh token JWT firmado con duración {@code jwt.refresh-expiration}
+     * @return refresh token JWT con el claim {@code type: "refresh"} y duración de 7 días
      */
     public String generateRefreshToken(UserDetails userDetails) {
         Map<String, Object> claims = new HashMap<>();
@@ -110,23 +130,30 @@ public class JwtService {
     }
 
     /**
-     * Construye y firma un token JWT con los claims, sujeto y tiempos dados.
+     * Genera un refresh token JWT con duración variable según la preferencia del usuario.
      *
-     * @param extraClaims claims adicionales a incluir en el payload del token
-     * @param userDetails usuario cuyo {@code username} (email) será el {@code subject}
-     * @param expiration  duración del token en milisegundos desde ahora
-     * @return token JWT compacto firmado con HS256
+     * <p>Este es el método que debe usarse en el login tradicional para respetar
+     * la preferencia de "Recuérdame" del usuario:</p>
+     * <ul>
+     *   <li>{@code rememberMe = true} → 7 días. El usuario puede cerrar el navegador
+     *       y retomar la sesión sin re-autenticarse.</li>
+     *   <li>{@code rememberMe = false} → 1 día. La sesión expira al día siguiente.</li>
+     * </ul>
+     *
+     * @param userDetails datos del usuario autenticado
+     * @param rememberMe  {@code true} para sesión de 7 días; {@code false} para sesión de 1 día
+     * @return refresh token JWT con el claim {@code type: "refresh"} y la duración correspondiente
      */
-    private String buildToken(Map<String, Object> extraClaims,
-                              UserDetails userDetails, long expiration) {
-        return Jwts.builder()
-                .setClaims(extraClaims)
-                .setSubject(userDetails.getUsername())
-                .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + expiration))
-                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
-                .compact();
+    public String generateRefreshToken(UserDetails userDetails, boolean rememberMe) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("type", "refresh");
+        long duration = rememberMe ? refreshExpirationTime : REFRESH_NO_REMEMBER_MS;
+        return buildToken(claims, userDetails, duration);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // VALIDACIÓN
+    // ─────────────────────────────────────────────────────────────────────
 
     /**
      * Valida un token JWT verificando que pertenezca al usuario y no haya expirado.
@@ -141,7 +168,7 @@ public class JwtService {
     }
 
     /**
-     * Verifica si un token JWT ha expirado.
+     * Verifica si un token JWT ha expirado comparando su fecha de expiración con la actual.
      *
      * @param token token JWT a verificar
      * @return {@code true} si la fecha de expiración es anterior a la fecha actual
@@ -150,11 +177,15 @@ public class JwtService {
         return extractExpiration(token).before(new Date());
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // EXTRACCIÓN DE CLAIMS
+    // ─────────────────────────────────────────────────────────────────────
+
     /**
      * Extrae el nombre de usuario (email) del subject del token JWT.
      *
      * @param token token JWT del que extraer el email
-     * @return correo electrónico del usuario codificado en el token
+     * @return correo electrónico del usuario codificado en el subject del token
      */
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
@@ -175,7 +206,8 @@ public class JwtService {
      *
      * <p>Permite extraer cualquier claim de forma genérica:</p>
      * <pre>{@code
-     * String role = jwtService.extractClaim(token, claims -> claims.get("role", String.class));
+     * String role   = jwtService.extractClaim(token, c -> c.get("role", String.class));
+     * Long   userId = jwtService.extractClaim(token, c -> c.get("userId", Long.class));
      * }</pre>
      *
      * @param <T>            tipo del claim a extraer
@@ -189,14 +221,14 @@ public class JwtService {
     }
 
     /**
-     * Parsea y devuelve todos los claims del token JWT.
+     * Parsea y devuelve todos los claims del payload del token JWT.
      *
      * <p>Lanza una excepción de {@code io.jsonwebtoken} si el token está malformado,
-     * ha expirado o la firma no es válida.</p>
+     * ha expirado o la firma no es válida con la clave configurada.</p>
      *
      * @param token token JWT a parsear
      * @return objeto {@link Claims} con todos los claims del payload
-     * @throws JwtException si el token es inválido o no puede verificarse
+     * @throws JwtException si el token es inválido, expirado o no puede verificarse
      */
     public Claims extractAllClaims(String token) {
         return Jwts.parserBuilder()
@@ -206,10 +238,33 @@ public class JwtService {
                 .getBody();
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // INTERNO
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Construye y firma un token JWT con los claims, sujeto y tiempo de expiración dados.
+     *
+     * @param extraClaims claims adicionales a incluir en el payload del token
+     * @param userDetails usuario cuyo email será el {@code subject} del token
+     * @param expiration  duración del token en milisegundos desde el momento de emisión
+     * @return token JWT compacto firmado con HS256
+     */
+    private String buildToken(Map<String, Object> extraClaims,
+                              UserDetails userDetails, long expiration) {
+        return Jwts.builder()
+                .setClaims(extraClaims)
+                .setSubject(userDetails.getUsername())
+                .setIssuedAt(new Date(System.currentTimeMillis()))
+                .setExpiration(new Date(System.currentTimeMillis() + expiration))
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
     /**
      * Decodifica la clave secreta Base64 y construye la clave HMAC para firmar y verificar tokens.
      *
-     * @return clave criptográfica {@link Key} derivada del secreto configurado
+     * @return clave criptográfica {@link Key} derivada del secreto configurado en {@code jwt.secret}
      */
     private Key getSigningKey() {
         byte[] keyBytes = Decoders.BASE64.decode(secretKey);

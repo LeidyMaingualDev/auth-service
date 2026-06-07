@@ -15,7 +15,7 @@ import lombok.*;
  * una minúscula, un dígito y un carácter especial ({@code @$!%*?&}).</p>
  *
  * @author Leidy Martinez
- * @version 1.0
+ * @version 3.0
  */
 
 @Data

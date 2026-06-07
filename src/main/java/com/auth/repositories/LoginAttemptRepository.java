@@ -14,7 +14,7 @@ import java.util.List;
  * como múltiples intentos fallidos desde una misma cuenta en un período de tiempo.</p>
  *
  * @author Leidy Martinez
- * @version 1.0
+ * @version 3.0
  * @see LoginAttempt
  */
 @Repository
