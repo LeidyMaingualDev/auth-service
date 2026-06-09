@@ -17,13 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * Controlador REST para la configuracion y consulta de notificaciones del
- * perfil.
- *
- * <p>
- * Expone endpoints para activar notificaciones, silenciarlas, consultar la
- * bandeja interna y marcar notificaciones como leidas.
- * </p>
+ * Controlador REST para la configuracion y consulta de notificaciones del perfil.
  *
  * @author Natali Ramirez
  * @version 1.0
@@ -37,6 +31,19 @@ public class ProfileNotificationController {
     private final NotificationInboxService inboxService;
 
     /**
+     * Consulta la configuracion actual de notificaciones.
+     *
+     * @param authHeader encabezado Authorization con token Bearer
+     * @return configuracion actual
+     */
+    @GetMapping
+    public ResponseEntity<ApiResponseDTO<NotificationSettingsResponseDTO>> settings(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        return ResponseEntity.ok(settingsService.getSettings(authHeader));
+    }
+
+    /**
      * Activa las notificaciones para el usuario autenticado.
      *
      * @param authHeader encabezado Authorization con token Bearer
@@ -47,6 +54,19 @@ public class ProfileNotificationController {
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
         return ResponseEntity.ok(settingsService.activate(authHeader));
+    }
+
+    /**
+     * Desactiva las notificaciones para el usuario autenticado.
+     *
+     * @param authHeader encabezado Authorization con token Bearer
+     * @return configuracion actualizada
+     */
+    @PutMapping("/disable")
+    public ResponseEntity<ApiResponseDTO<NotificationSettingsResponseDTO>> disable(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        return ResponseEntity.ok(settingsService.disable(authHeader));
     }
 
     /**
@@ -91,7 +111,7 @@ public class ProfileNotificationController {
     /**
      * Marca una notificacion como leida.
      *
-     * @param id         identificador de la notificacion
+     * @param id identificador de la notificacion
      * @param authHeader encabezado Authorization con token Bearer
      * @return notificacion actualizada
      */

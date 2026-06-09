@@ -1,19 +1,24 @@
 package com.auth.services;
 
 import com.auth.models.dtos.ApiResponseDTO;
+import com.auth.models.dtos.SessionSecurityResponseDTO;
 import com.auth.models.dtos.UserProfileResponseDTO;
+import com.auth.models.entities.LoginAttempt;
 import com.auth.models.entities.Role;
 import com.auth.models.entities.User;
+import com.auth.repositories.LoginAttemptRepository;
 import com.auth.security.RoleGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
- * Servicio para gestionar el perfil del usuario, incluye operaciones para consultar y actualizar la información del perfil. Utiliza el RoleGuard para verificar la autenticación y autorización del usuario antes de permitir el acceso a las operaciones relacionadas con el perfil. Proporciona métodos para mapear la entidad User a un DTO de respuesta de perfil de usuario, y para resolver el rol principal del usuario en función de sus roles asignados.
+ * Servicio para gestionar el perfil del usuario autenticado.
  *
  * @author Natali Ramirez
  * @version 1.0
@@ -23,11 +28,13 @@ import java.util.Objects;
 public class ProfileService {
 
     private final RoleGuard roleGuard;
+    private final LoginAttemptRepository loginAttemptRepository;
 
     /**
      * Obtiene el perfil del usuario autenticado.
-     * @param authHeader el encabezado de autenticación
-     * @return el perfil del usuario autenticado
+     *
+     * @param authHeader encabezado de autenticacion
+     * @return perfil del usuario autenticado
      */
     @Transactional(readOnly = true)
     public ApiResponseDTO<UserProfileResponseDTO> getAuthenticatedProfile(String authHeader) {
@@ -40,10 +47,39 @@ public class ProfileService {
     }
 
     /**
-     * Mapea la entidad User a un DTO de respuesta de perfil de usuario.
-     * @param user la entidad User
-     * @return el DTO de respuesta de perfil de usuario
+     * Obtiene informacion de sesion y seguridad basada en datos reales registrados.
+     *
+     * @param authHeader encabezado de autenticacion
+     * @param userAgent encabezado User-Agent de la solicitud actual
+     * @param currentIp IP detectada en la solicitud actual
+     * @return datos de sesion y seguridad
      */
+    @Transactional(readOnly = true)
+    public ApiResponseDTO<SessionSecurityResponseDTO> getSessionSecurity(
+            String authHeader,
+            String userAgent,
+            String currentIp) {
+        User user = roleGuard.getAuthenticatedActiveUser(authHeader);
+        Optional<LoginAttempt> lastLogin = findLastSuccessfulLogin(user);
+
+        String ipAddress = lastLogin
+                .map(LoginAttempt::getIpAddress)
+                .filter(ip -> ip != null && !ip.isBlank())
+                .orElse(currentIp);
+
+        LocalDateTime startedAt = lastLogin
+                .map(LoginAttempt::getAttemptedAt)
+                .orElse(user.getCreatedAt());
+
+        SessionSecurityResponseDTO response = SessionSecurityResponseDTO.builder()
+                .device(resolveDevice(userAgent))
+                .ipAddress(ipAddress)
+                .startedAt(startedAt)
+                .build();
+
+        return ApiResponseDTO.ok("Sesion consultada exitosamente", response);
+    }
+
     private UserProfileResponseDTO mapToUserProfileResponse(User user) {
         List<String> roles = user.getRoles() == null
                 ? List.of()
@@ -59,6 +95,9 @@ public class ProfileService {
         ).trim();
 
         boolean active = user.isActive();
+        LocalDateTime lastAccess = findLastSuccessfulLogin(user)
+                .map(LoginAttempt::getAttemptedAt)
+                .orElse(null);
 
         return UserProfileResponseDTO.builder()
                 .id(user.getId())
@@ -74,14 +113,14 @@ public class ProfileService {
                 .documentNumber(user.getDocumentNumber())
                 .phoneNumber(user.getPhoneNumber())
                 .createdAt(user.getCreatedAt())
+                .lastAccess(lastAccess)
                 .build();
     }
 
-    /**
-     * Resuelve el rol principal del usuario en función de sus roles asignados.
-     * @param roles la lista de roles del usuario
-     * @return el rol principal del usuario
-     */
+    private Optional<LoginAttempt> findLastSuccessfulLogin(User user) {
+        return loginAttemptRepository.findFirstByEmailAndSuccessOrderByAttemptedAtDesc(user.getEmail(), true);
+    }
+
     private String resolveMainRole(List<String> roles) {
         if (roles.contains("ADMIN")) {
             return "ADMIN";
@@ -93,5 +132,29 @@ public class ProfileService {
             return "USER";
         }
         return roles.isEmpty() ? null : roles.get(0);
+    }
+
+    private String resolveDevice(String userAgent) {
+        if (userAgent == null || userAgent.isBlank()) {
+            return "Dispositivo no identificado";
+        }
+
+        String normalized = userAgent.toLowerCase();
+        String browser = "Navegador Web";
+        if (normalized.contains("edg/")) {
+            browser = "Microsoft Edge";
+        } else if (normalized.contains("chrome/")) {
+            browser = "Google Chrome";
+        } else if (normalized.contains("firefox/")) {
+            browser = "Mozilla Firefox";
+        } else if (normalized.contains("safari/") && !normalized.contains("chrome/")) {
+            browser = "Safari";
+        }
+
+        if (normalized.contains("mobile") || normalized.contains("android") || normalized.contains("iphone")) {
+            return browser + " movil";
+        }
+
+        return browser;
     }
 }

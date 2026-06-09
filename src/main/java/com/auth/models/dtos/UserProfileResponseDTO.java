@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * UserProfileResponseDTO es un DTO (Data Transfer Object) que representa la respuesta de perfil de usuario para un usuario autenticado. Contiene los campos necesarios para validar y procesar la respuesta de perfil de usuario.
+ * UserProfileResponseDTO es un DTO que representa la respuesta de perfil de usuario autenticado.
  *
  * @author Natali Ramirez
  * @version 1.0
@@ -20,43 +20,45 @@ import java.util.List;
 @AllArgsConstructor
 public class UserProfileResponseDTO {
 
-    /** El ID del usuario */
+    /** El ID del usuario. */
     private Long id;
-    /** El nombre completo del usuario */
 
+    /** El nombre completo del usuario. */
     private String fullName;
-    /** El nombre del usuario */
 
+    /** El nombre del usuario. */
     private String name;
-    /** El apellido del usuario */  
 
+    /** El apellido del usuario. */
     private String lastName;
-    /** El correo electrónico del usuario */
 
+    /** El correo electronico del usuario. */
     private String email;
-    /** El rol del usuario */
 
+    /** El rol principal del usuario. */
     private String role;
-    /** Los roles del usuario */
 
+    /** Los roles del usuario. */
     private List<String> roles;
-    /** El estado de actividad del usuario */
 
+    /** El estado de actividad del usuario. */
     private Boolean active;
-    /** El estado del usuario */
 
+    /** El estado textual del usuario. */
     private String status;
-    /** El tipo de documento del usuario */
 
+    /** El tipo de documento del usuario. */
     private String documentType;
-    /** El número de documento del usuario */
 
+    /** El numero de documento del usuario. */
     private String documentNumber;
-    /** El número de teléfono del usuario */
 
+    /** El numero de telefono del usuario. */
     private String phoneNumber;
-    /** La fecha y hora de creación del perfil */
 
+    /** La fecha y hora de creacion del perfil. */
     private LocalDateTime createdAt;
-    /** La fecha y hora de la última actualización del perfil */
+
+    /** Fecha y hora del ultimo inicio de sesion exitoso. */
+    private LocalDateTime lastAccess;
 }

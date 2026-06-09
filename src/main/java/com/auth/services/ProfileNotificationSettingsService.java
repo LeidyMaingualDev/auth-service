@@ -17,11 +17,6 @@ import java.time.LocalDateTime;
 /**
  * Servicio para administrar la configuracion de notificaciones del perfil.
  *
- * <p>
- * Permite activar notificaciones y habilitar modo silencioso, manteniendo las
- * notificaciones en bandeja sin alertas emergentes.
- * </p>
- *
  * @author Natali Ramirez
  * @version 1.0
  */
@@ -32,6 +27,19 @@ public class ProfileNotificationSettingsService {
     private final RoleGuard roleGuard;
     private final NotificationPreferenceRepository repository;
     private final NotificationInboxService inboxService;
+
+    /**
+     * Consulta la configuracion actual de notificaciones del usuario autenticado.
+     *
+     * @param authHeader encabezado Authorization con token Bearer
+     * @return configuracion actual
+     */
+    @Transactional(readOnly = true)
+    public ApiResponseDTO<NotificationSettingsResponseDTO> getSettings(String authHeader) {
+        User user = roleGuard.getAuthenticatedActiveUser(authHeader);
+        NotificationPreference preference = getOrCreate(user.getId());
+        return ApiResponseDTO.ok("Configuracion de notificaciones consultada", map(preference));
+    }
 
     /**
      * Activa las notificaciones para el usuario autenticado.
@@ -57,6 +65,25 @@ public class ProfileNotificationSettingsService {
                 "Tus notificaciones fueron activadas correctamente");
 
         return ApiResponseDTO.ok("Notificaciones activadas", map(saved));
+    }
+
+    /**
+     * Desactiva las notificaciones para el usuario autenticado.
+     *
+     * @param authHeader encabezado Authorization con token Bearer
+     * @return configuracion actualizada
+     */
+    @Transactional
+    public ApiResponseDTO<NotificationSettingsResponseDTO> disable(String authHeader) {
+        User user = roleGuard.getAuthenticatedActiveUser(authHeader);
+        NotificationPreference preference = getOrCreate(user.getId());
+
+        preference.setNotificationsEnabled(false);
+        preference.setSilentMode(false);
+        preference.setUpdatedAt(LocalDateTime.now());
+
+        NotificationPreference saved = repository.save(preference);
+        return ApiResponseDTO.ok("Notificaciones desactivadas", map(saved));
     }
 
     /**
