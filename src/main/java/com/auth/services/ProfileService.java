@@ -5,7 +5,9 @@ import com.auth.models.dtos.UserProfileResponseDTO;
 import com.auth.models.entities.Role;
 import com.auth.models.entities.User;
 import com.auth.models.enums.AuthProvider;
+import com.auth.repositories.UserRepository;
 import com.auth.security.RoleGuard;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +30,7 @@ import java.util.Objects;
 public class ProfileService {
 
     private final RoleGuard roleGuard;
+    private final UserRepository userRepository;
 
     /**
      * Obtiene el perfil del usuario autenticado.
@@ -93,5 +96,22 @@ public class ProfileService {
         if (roles.contains("ADMIN")) return "ADMIN";
         if (roles.contains("USER")) return "USER";
         return roles.isEmpty() ? null : roles.get(0);
+    }
+
+    /**
+     * Obtiene la información de un usuario por su ID.
+     * Usado por otros microservicios para enriquecer respuestas con datos del usuario.
+     *
+     * @param id ID del usuario a consultar
+     * @return perfil del usuario encontrado
+     * @throws EntityNotFoundException si el usuario no existe
+     */
+    @Transactional(readOnly = true)
+    public ApiResponseDTO<UserProfileResponseDTO> getUserById(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Usuario no encontrado con ID: " + id));
+        return ApiResponseDTO.ok("Usuario consultado exitosamente",
+                mapToUserProfileResponse(user));
     }
 }
