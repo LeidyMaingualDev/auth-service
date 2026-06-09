@@ -3,6 +3,7 @@ package com.auth;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Clase principal de arranque del microservicio de autenticación.
@@ -23,6 +24,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
  */
 @EnableAsync
 @SpringBootApplication
+@EnableScheduling
 public class Application {
 
     /**
