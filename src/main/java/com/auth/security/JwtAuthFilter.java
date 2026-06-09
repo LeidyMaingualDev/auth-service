@@ -124,6 +124,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         return path.startsWith("/oauth2/") ||
                 path.startsWith("/login/oauth2/") ||
-                path.startsWith("/auth/");
+                path.equals("/auth/login") ||
+                path.equals("/auth/register") ||
+                path.equals("/auth/forgot-password") ||
+                path.equals("/auth/reset-password") ||
+                path.equals("/auth/refresh-token") ||
+                path.equals("/auth/refresh-from-cookie") ||
+                path.equals("/auth/confirm-email") ||
+                path.equals("/auth/logout");
     }
 }

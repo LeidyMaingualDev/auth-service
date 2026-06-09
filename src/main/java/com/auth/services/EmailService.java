@@ -8,6 +8,7 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import jakarta.mail.internet.MimeMessage;
+import org.springframework.mail.SimpleMailMessage;
 
 /**
  * Servicio de envío de correos electrónicos transaccionales para el flujo de autenticación.
@@ -401,5 +402,91 @@ public class EmailService {
     /** Genera el HTML de una nota pequeña en texto gris. */
     private String smallNote(String text) {
         return "<p style=\"margin:0; font-size:12px; color:" + COLOR_TEXT_SOFT + "; line-height:1.6;\">" + text + "</p>";
+    }
+
+    /**
+     * Envía correo simple notificando que la contraseña fue cambiada desde el perfil.
+     * Usa SimpleMailMessage (texto plano) a diferencia del HTML de sendPasswordChangedEmail.
+     *
+     * @param email correo del usuario
+     * @param name  nombre del usuario
+     */
+    @Async
+    public void sendPasswordChangedProfileEmail(String email, String name) {
+        if (email == null || email.isBlank()) return;
+        String userName = (name != null && !name.isBlank()) ? name : "usuario";
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(email);
+            message.setSubject("Contrasena actualizada - Qvenly");
+            message.setText(
+                    "Hola " + userName + ",\n\n" +
+                            "Te informamos que la contrasena de tu cuenta fue actualizada correctamente.\n\n" +
+                            "Si tu no realizaste este cambio, comunicate con soporte de inmediato.\n\n" +
+                            "Atentamente,\nEquipo Qvenly");
+            mailSender.send(message);
+            log.info("Correo de cambio de contrasena (perfil) enviado a: {}", email);
+        } catch (Exception e) {
+            log.error("Error al enviar correo de cambio de contrasena a {}: {}", email, e.getMessage());
+            throw e; // propagar para permitir reintento
+        }
+    }
+
+    /**
+     * Envía correo notificando que el perfil será eliminado.
+     * Se envía ANTES de la eliminación para que el correo llegue.
+     * Propaga excepciones para permitir reintento.
+     *
+     * @param email correo del usuario
+     * @param name  nombre del usuario
+     */
+    @Async
+    public void sendProfileDeletedBeforeDeletionEmail(String email, String name) {
+        if (email == null || email.isBlank()) return;
+        String userName = (name != null && !name.isBlank()) ? name : "usuario";
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(email);
+            message.setSubject("Eliminacion de perfil - Qvenly");
+            message.setText(
+                    "Hola " + userName + ",\n\n" +
+                            "Te informamos que tu perfil en Qvenly sera eliminado y desvinculado del sistema.\n\n" +
+                            "Si tu no solicitaste esta eliminacion, comunicate con soporte de inmediato.\n\n" +
+                            "Atentamente,\nEquipo Qvenly");
+            mailSender.send(message);
+            log.info("Correo de eliminacion de perfil enviado a: {}", email);
+        } catch (Exception e) {
+            log.error("Error al enviar correo de eliminacion a {}: {}", email, e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Envía correo notificando que el perfil fue desactivado (eliminación lógica).
+     *
+     * @param email correo del usuario
+     * @param name  nombre del usuario
+     */
+    @Async
+    public void sendProfileDeletedEmail(String email, String name) {
+        if (email == null || email.isBlank()) return;
+        String userName = (name != null && !name.isBlank()) ? name : "usuario";
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(email);
+            message.setSubject("Perfil desactivado - Qvenly");
+            message.setText(
+                    "Hola " + userName + ",\n\n" +
+                            "Tu perfil en Qvenly fue desactivado correctamente.\n\n" +
+                            "Si tu no realizaste esta accion, comunicate con soporte.\n\n" +
+                            "Atentamente,\nEquipo Qvenly");
+            mailSender.send(message);
+            log.info("Correo de desactivacion enviado a: {}", email);
+        } catch (Exception e) {
+            log.error("Error al enviar correo de desactivacion a {}: {}", email, e.getMessage());
+        }
     }
 }
