@@ -18,25 +18,16 @@ import java.io.IOException;
 /**
  * Filtro de seguridad que intercepta cada petición HTTP para validar el token JWT.
  *
- * <p>Se ejecuta exactamente una vez por petición gracias a {@link OncePerRequestFilter}
- * y realiza las siguientes comprobaciones en orden:</p>
+ * <p>Soporta dos modos de autenticación:</p>
  * <ol>
- *   <li>Extrae el token JWT de la cabecera {@code Authorization: Bearer <token>}.</li>
- *   <li>Verifica que el token no esté en la blacklist (tokens revocados por logout).</li>
- *   <li>Extrae el email (subject) del payload del token.</li>
- *   <li>Carga los detalles del usuario desde la base de datos.</li>
- *   <li>Valida la firma y la expiración del token.</li>
- *   <li>Si todo es válido, establece la autenticación en el {@link SecurityContextHolder}.</li>
+ *   <li><b>Header X-User-Email</b> — inyectado por el Gateway tras validar el JWT.
+ *       Es el modo principal cuando las peticiones pasan por el Gateway.</li>
+ *   <li><b>Header Authorization: Bearer</b> — para peticiones directas al auth-service
+ *       sin pasar por el Gateway (Postman, pruebas, etc.).</li>
  * </ol>
  *
- * <p>Si cualquier comprobación falla, el filtro deja pasar la petición sin autenticar.
- * Spring Security rechazará la petición en los endpoints protegidos.</p>
- *
- * <p>Las rutas de autenticación ({@code /auth/**}, {@code /oauth2/**})
- * están excluidas del filtro mediante {@link #shouldNotFilter}.</p>
- *
  * @author Leidy Martinez
- * @version 3.0
+ * @version 4.0
  * @see JwtService
  * @see TokenBlacklistRepository
  */
@@ -44,37 +35,26 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
 
-    /** Servicio para validar y extraer claims de tokens JWT. */
     private final JwtService jwtService;
-
-    /** Servicio para cargar los detalles del usuario desde la base de datos. */
     private final UserDetailsService userDetailsService;
-
-    /** Repositorio para verificar si un token fue revocado por logout. */
     private final TokenBlacklistRepository tokenBlacklistRepository;
 
-    /**
-     * Lógica principal del filtro JWT. Se invoca una vez por petición HTTP.
-     *
-     * <p>Si la cabecera {@code Authorization} está ausente o no comienza con {@code "Bearer "},
-     * la petición pasa al siguiente filtro sin autenticar. Las rutas públicas continuarán
-     * normalmente; las protegidas serán rechazadas por Spring Security más adelante.</p>
-     *
-     * @param request     petición HTTP entrante
-     * @param response    respuesta HTTP saliente
-     * @param filterChain cadena de filtros a continuar tras la validación
-     * @throws ServletException si ocurre un error de servlet durante el filtrado
-     * @throws IOException      si ocurre un error de I/O durante el filtrado
-     */
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        final String authHeader = request.getHeader("Authorization");
+        // ── Modo 1: Header X-User-Email inyectado por el Gateway ──────────
+        String emailFromGateway = request.getHeader("X-User-Email");
+        if (emailFromGateway != null && !emailFromGateway.isBlank()) {
+            authenticateByEmail(emailFromGateway, request);
+            filterChain.doFilter(request, response);
+            return;
+        }
 
-        // Sin cabecera o sin prefijo Bearer → continuar sin autenticar
+        // ── Modo 2: Header Authorization: Bearer (acceso directo) ─────────
+        final String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
@@ -82,27 +62,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         final String jwt = authHeader.substring(7);
 
-        // Token en blacklist → el usuario cerró sesión, continuar sin autenticar
         if (tokenBlacklistRepository.existsByToken(jwt)) {
             filterChain.doFilter(request, response);
             return;
         }
 
         final String email = jwtService.extractUsername(jwt);
-
-        // Autenticar solo si hay email y aún no hay autenticación en el contexto
         if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             UserDetails userDetails = userDetailsService.loadUserByUsername(email);
-
             if (jwtService.isTokenValid(jwt, userDetails)) {
-                UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(
-                                userDetails, null, userDetails.getAuthorities()
-                        );
-                authToken.setDetails(
-                        new WebAuthenticationDetailsSource().buildDetails(request)
-                );
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+                setAuthentication(userDetails, request);
             }
         }
 
@@ -110,15 +79,29 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Excluye del filtrado las rutas de autenticación y OAuth2.
-     *
-     * <p>Estas rutas no requieren token JWT válido — son el punto de entrada
-     * al sistema. Aplicar el filtro sobre ellas causaría errores en el flujo
-     * de login y registro.</p>
-     *
-     * @param request petición HTTP a evaluar
-     * @return {@code true} si la ruta debe omitirse; {@code false} si debe filtrarse
+     * Autentica al usuario en el SecurityContext usando su email.
+     * Usado cuando el Gateway ya validó el JWT e inyectó X-User-Email.
      */
+    private void authenticateByEmail(String email, HttpServletRequest request) {
+        try {
+            if (SecurityContextHolder.getContext().getAuthentication() == null) {
+                UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+                setAuthentication(userDetails, request);
+            }
+        } catch (Exception e) {
+            logger.warn("No se pudo autenticar por X-User-Email: " + e.getMessage());
+        }
+    }
+
+    private void setAuthentication(UserDetails userDetails, HttpServletRequest request) {
+        UsernamePasswordAuthenticationToken authToken =
+                new UsernamePasswordAuthenticationToken(
+                        userDetails, null, userDetails.getAuthorities()
+                );
+        authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        SecurityContextHolder.getContext().setAuthentication(authToken);
+    }
+
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
