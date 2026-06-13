@@ -53,6 +53,9 @@ spring:
           auth: true
           starttls:
             enable: true
+            required: true
+          ssl:
+            trust: smtp.gmail.com  # necesario para evitar error de handshake TLS en red local
 
   cloud:
     consul:
@@ -64,9 +67,9 @@ spring:
         health-check-interval: 10s
 
 jwt:
-  secret: YOUR_JWT_SECRET_BASE64          # clave Base64 de mínimo 256 bits
-  expiration: 900000                       # 15 minutos — access token (siempre fijo)
-  refresh-expiration: 604800000            # 7 días — refresh token con "Recuérdame" activo
+  secret: YOUR_JWT_SECRET_BASE64          # clave Base64 de mínimo 256 bits — debe ser igual en gateway
+  expiration: 900000                       # 15 minutos — access token
+  refresh-expiration: 604800000            # 7 días — refresh token
 
 management:
   health:
@@ -78,6 +81,7 @@ management:
         include: health,info
 
 app:
+  notification-retry-delay-ms: 300000      # 5 minutos entre reintentos de notificación
   frontend-url: http://localhost:4200
   max-login-attempts: 5                    # intentos fallidos antes de enviar alerta de seguridad
 
