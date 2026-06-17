@@ -92,7 +92,9 @@ public class SecurityConfig {
                                 "/login/oauth2/**",
                                 "/actuator/health",
                                 "/actuator/info",
-                                "/auth/internal/**"
+                                "/auth/internal/**",
+                                "/api/users/stats",           // estadisticas 
+                                "/api/users/monthly-growth"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
