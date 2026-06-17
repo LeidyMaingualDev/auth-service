@@ -13,6 +13,9 @@ public enum NotificationType {
     /** Invitación recibida a un evento (RF52, RF53) */
     INVITATION_RECEIVED,
 
+    /** La invitación fue cancelada por el organizador */
+    INVITATION_CANCELLED,
+
     /** El evento fue cancelado (RF42.1) */
     EVENT_CANCELLED,
 

@@ -92,7 +92,8 @@ public class SecurityConfig {
                                 "/login/oauth2/**",
                                 "/actuator/health",
                                 "/actuator/info",
-                                "/auth/internal/**"
+                                "/auth/internal/**",
+                                "/auth/internal/users/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
