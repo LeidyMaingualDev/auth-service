@@ -93,6 +93,7 @@ public class SecurityConfig {
                                 "/actuator/health",
                                 "/actuator/info",
                                 "/auth/internal/**",
+                                "/auth/internal/users/**"
                                 "/api/users/stats",           // estadisticas 
                                 "/api/users/monthly-growth"
                         ).permitAll()
