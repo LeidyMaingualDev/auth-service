@@ -4,7 +4,7 @@ server:
     session:
       cookie:
         same-site: lax
-        secure: false  # cambiar a true en producción con HTTPS
+        secure: false
 
 spring:
   application:
@@ -21,8 +21,8 @@ spring:
       client:
         registration:
           google:
-            client-id: "YOUR_GOOGLE_CLIENT_ID"
-            client-secret: "YOUR_GOOGLE_CLIENT_SECRET"
+            client-id: YOUR_GOOGLE_CLIENT_ID
+            client-secret: YOUR_GOOGLE_CLIENT_SECRET
             scope:
               - email
               - profile
@@ -46,16 +46,13 @@ spring:
     host: smtp.gmail.com
     port: 587
     username: YOUR_EMAIL@gmail.com
-    password: YOUR_APP_PASSWORD  # contraseña de aplicación de Google, no la del correo
+    password: YOUR_GMAIL_APP_PASSWORD
     properties:
       mail:
         smtp:
           auth: true
           starttls:
             enable: true
-            required: true
-          ssl:
-            trust: smtp.gmail.com  # necesario para evitar error de handshake TLS en red local
 
   cloud:
     consul:
@@ -67,26 +64,20 @@ spring:
         health-check-interval: 10s
 
 jwt:
-  secret: YOUR_JWT_SECRET_BASE64          # clave Base64 de mínimo 256 bits — debe ser igual en gateway
-  expiration: 900000                       # 15 minutos — access token
-  refresh-expiration: 604800000            # 7 días — refresh token
+  secret: YOUR_JWT_SECRET_BASE64
+  expiration: 900000
+  refresh-expiration: 604800000
 
 management:
-  health:
-    mail:
-      enabled: false                       # evita que el health check falle si el SMTP no responde
   endpoints:
     web:
       exposure:
         include: health,info
 
 app:
-  notification-retry-delay-ms: 300000      # 5 minutos entre reintentos de notificación
+  notification-retry-delay-ms: 300000
   frontend-url: http://localhost:4200
-  max-login-attempts: 5                    # intentos fallidos antes de enviar alerta de seguridad
+  max-login-attempts: 5
 
-logging:
-  level:
-    org.springframework.security: DEBUG
-    com.auth: DEBUG
-    org.springframework.web: DEBUG
+internal:
+  api-key: YOUR_SHARED_INTERNAL_API_KEY
