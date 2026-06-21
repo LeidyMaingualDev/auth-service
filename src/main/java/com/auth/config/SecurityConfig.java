@@ -95,7 +95,8 @@ public class SecurityConfig {
                                 "/auth/internal/**",
                                 "/auth/internal/users/**",
                                 "/api/users/stats",           // estadisticas 
-                                "/api/users/monthly-growth"
+                                "/api/users/monthly-growth",
+                                "/api/users/by-id/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
