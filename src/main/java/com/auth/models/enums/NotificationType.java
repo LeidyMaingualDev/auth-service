@@ -35,6 +35,9 @@ public enum NotificationType {
     /** Una actividad fue cancelada (RF73.1) */
     ACTIVITY_CANCELLED,
 
+    /** Una actividad fue modificada */
+    ACTIVITY_UPDATED,
+
     /** Asistencia registrada al escanear QR (RF78.2) */
     ATTENDANCE_RECORDED
 }
